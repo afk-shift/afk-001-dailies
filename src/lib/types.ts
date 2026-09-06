@@ -35,6 +35,10 @@ export interface Stats {
   subagents: number;
   inputTokens: number;
   outputTokens: number;
+  /** Sum of `cache_read_input_tokens` — reported separately since it's not
+   *  counted in `inputTokens` (cache reads are near-free, and summing them
+   *  in wildly inflates the number over a long session). */
+  cacheReadTokens?: number;
 }
 
 export interface CastMember {
@@ -63,6 +67,9 @@ interface EventBase {
 export interface PromptEvent extends EventBase {
   kind: 'prompt';
   text: string;
+  /** Set when this prompt was fired by a cron/scheduled task rather than
+   *  typed by a human. */
+  source?: 'scheduled';
 }
 
 export interface ReplyEvent extends EventBase {
@@ -81,6 +88,9 @@ export interface ToolEvent extends EventBase {
 export interface CommitEvent extends EventBase {
   kind: 'commit';
   message: string;
+  /** Cast id of the actor that made the commit, when it came from a
+   *  subagent rather than the orchestrator. */
+  actor?: string;
 }
 
 export interface SpawnEvent extends EventBase {

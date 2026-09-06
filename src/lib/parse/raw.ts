@@ -64,6 +64,13 @@ export interface RawLine {
   isMeta?: boolean;
   isSidechain?: boolean;
   agentId?: string;
+  /** Set (with `scheduledFireId`) on the `user` line a cron/scheduled task
+   *  fires as its prompt — present even though the line is also `isMeta:true`. */
+  scheduledTaskId?: string;
+  scheduledFireId?: string;
+  /** `"system"` on a harness-injected turn (scheduled fires, task
+   *  notifications); `"typed"` for an ordinary human-typed prompt. */
+  promptSource?: string;
   [key: string]: unknown;
 }
 
