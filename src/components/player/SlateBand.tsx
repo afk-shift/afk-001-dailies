@@ -8,7 +8,7 @@
  * before the first paint and the island hydrates against unchanged markup.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Supercut } from '../../lib/types';
 import { CastStrip } from './CastStrip';
 import { Header, StatGrid } from './Header';
@@ -23,7 +23,13 @@ function readCollapsed(): boolean {
   return document.documentElement.dataset.slate === 'collapsed';
 }
 
-export function SlateBand({ supercut }: { supercut: Supercut }) {
+interface SlateBandProps {
+  supercut: Supercut;
+  /** The live badge, when this page is following (or could follow) a session. */
+  badge?: ReactNode;
+}
+
+export function SlateBand({ supercut, badge }: SlateBandProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => setCollapsed(readCollapsed()), []);
@@ -45,20 +51,23 @@ export function SlateBand({ supercut }: { supercut: Supercut }) {
       <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 lg:py-3">
         <div className="flex items-start gap-4">
           <Header supercut={supercut} />
-          <button
-            type="button"
-            onClick={toggle}
-            aria-expanded={!collapsed}
-            aria-controls="slate-details"
-            className={`ml-auto flex shrink-0 items-center gap-2 rounded-md border border-line px-2.5 py-1.5 font-mono text-[11px] text-muted transition-colors hover:border-accent/60 hover:text-paper ${FOCUS}`}
-          >
-            <span className="slate-open">Hide details</span>
-            <span className="slate-closed">Show details</span>
-            <span
-              aria-hidden="true"
-              className="slate-chevron block h-1.5 w-1.5 rotate-45 border-t border-l border-current"
-            />
-          </button>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {badge}
+            <button
+              type="button"
+              onClick={toggle}
+              aria-expanded={!collapsed}
+              aria-controls="slate-details"
+              className={`flex shrink-0 items-center gap-2 rounded-md border border-line px-2.5 py-1.5 font-mono text-[11px] text-muted transition-colors hover:border-accent/60 hover:text-paper ${FOCUS}`}
+            >
+              <span className="slate-open">Hide details</span>
+              <span className="slate-closed">Show details</span>
+              <span
+                aria-hidden="true"
+                className="slate-chevron block h-1.5 w-1.5 rotate-45 border-t border-l border-current"
+              />
+            </button>
+          </div>
         </div>
 
         <div id="slate-details" className="slate-details mt-3 space-y-3">

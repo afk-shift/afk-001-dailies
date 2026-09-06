@@ -11,9 +11,10 @@ interface Props {
   /**
    * `slim` hands the viewport to the page from `lg` up: a shorter site header,
    * no footer, and a shell that never scrolls. The page is then responsible
-   * for filling that height.
+   * for filling that height. `none` goes further and drops the site header and
+   * footer altogether, leaving nothing but the page — for screen recording.
    */
-  chrome?: 'default' | 'slim';
+  chrome?: 'default' | 'slim' | 'none';
 }
 
 const {
@@ -29,7 +30,8 @@ const socialTitle = ogTitle ?? pageTitle;
 const gutter = wide
   ? 'mx-auto max-w-7xl px-4 sm:px-6'
   : 'mx-auto max-w-5xl px-6';
-const slim = chrome === 'slim';
+const bare = chrome === 'none';
+const slim = chrome === 'slim' || bare;
 ---
 
 <!doctype html>
@@ -82,27 +84,31 @@ const slim = chrome === 'slim';
         slim && 'lg:h-full lg:min-h-0 lg:overflow-hidden',
       ]}
     >
-      <header class="border-b border-line/60">
-        <div
-          class:list={[
-            gutter,
-            'flex items-center justify-between',
-            slim ? 'py-3' : 'py-5',
-          ]}
-        >
-          <a
-            href="/"
-            class="font-mono text-sm font-semibold tracking-tight text-paper"
-          >
-            <span class="text-accent">&gt;</span> dailies
-          </a>
-          <nav class="font-mono text-xs text-muted">
-            <a href="/s/demo" class="transition-colors hover:text-paper"
-              >demo</a
+      {
+        !bare && (
+          <header class="border-b border-line/60">
+            <div
+              class:list={[
+                gutter,
+                'flex items-center justify-between',
+                slim ? 'py-3' : 'py-5',
+              ]}
             >
-          </nav>
-        </div>
-      </header>
+              <a
+                href="/"
+                class="font-mono text-sm font-semibold tracking-tight text-paper"
+              >
+                <span class="text-accent">&gt;</span> dailies
+              </a>
+              <nav class="font-mono text-xs text-muted">
+                <a href="/s/demo" class="transition-colors hover:text-paper">
+                  demo
+                </a>
+              </nav>
+            </div>
+          </header>
+        )
+      }
       <main
         class:list={[
           'relative flex-1',
@@ -111,11 +117,15 @@ const slim = chrome === 'slim';
       >
         <slot />
       </main>
-      <footer class:list={['border-t border-line/60', slim && 'lg:hidden']}>
-        <div class:list={[gutter, 'py-6 font-mono text-xs text-muted']}>
-          built with claude code
-        </div>
-      </footer>
+      {
+        !bare && (
+          <footer class:list={['border-t border-line/60', slim && 'lg:hidden']}>
+            <div class:list={[gutter, 'py-6 font-mono text-xs text-muted']}>
+              built with claude code
+            </div>
+          </footer>
+        )
+      }
     </div>
   </body>
 </html>

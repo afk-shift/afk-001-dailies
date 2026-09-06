@@ -251,6 +251,17 @@ export function usePlayback(
   const startMode = useRef(mode).current;
   useDeepLink(index, startIndex, mode, startMode);
 
+  // A live session growing under the playhead. Someone parked at the tip rides
+  // it forward; anyone reading further back keeps their place. Neither touches
+  // `playing` or `mode` — new events must never restart the reel.
+  const previousLast = useRef(last);
+  useEffect(() => {
+    const before = previousLast.current;
+    previousLast.current = last;
+    if (last <= before) return;
+    setIndex((current) => (current >= before ? last : current));
+  }, [last]);
+
   // The cadence loop. One timeout per event: the event at `index` holds the
   // screen for its dwell time, then the next one arrives. In supercut mode the
   // same loop also handles the jumps — running out of a segment starts a

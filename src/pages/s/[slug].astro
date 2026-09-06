@@ -33,6 +33,12 @@ const initialIndex =
 const initialMode =
   Astro.url.searchParams.get('cut') === '1' ? 'supercut' : 'linear';
 
+// `?live=1` follows a session that's still being written, and `?chrome=none`
+// strips the site header and footer so the player owns the whole frame for a
+// screen recording. Both are URL-only — nothing in the UI turns chrome off.
+const initialLive = Astro.url.searchParams.get('live') === '1';
+const chrome = Astro.url.searchParams.get('chrome') === 'none' ? 'none' : 'slim';
+
 const count = (value: number, noun: string) =>
   `${value} ${value === 1 ? noun : `${noun}s`}`;
 
@@ -70,12 +76,13 @@ const description = supercut
       description={description}
       ogTitle={title}
       wide
-      chrome="slim"
+      chrome={chrome}
     >
       <Player
         supercut={supercut}
         initialIndex={initialIndex}
         initialMode={initialMode}
+        initialLive={initialLive}
         client:load
       />
     </Base>

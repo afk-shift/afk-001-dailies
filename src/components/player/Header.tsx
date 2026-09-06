@@ -16,7 +16,7 @@ interface StatCell {
 
 export function Header({ supercut }: { supercut: Supercut }) {
   return (
-    <header className="min-w-0 lg:flex lg:flex-wrap lg:items-baseline lg:gap-x-4">
+    <div className="min-w-0 lg:flex lg:flex-wrap lg:items-baseline lg:gap-x-4">
       <h1 className="text-xl font-semibold tracking-tight text-balance text-paper sm:text-2xl lg:text-[1.375rem] lg:leading-snug">
         {supercut.title || supercut.sessionId}
       </h1>
@@ -24,7 +24,7 @@ export function Header({ supercut }: { supercut: Supercut }) {
         {supercut.project} · {formatDate(supercut.startedAt)} ·{' '}
         {formatDuration(supercut.stats.durationMs)}
       </p>
-    </header>
+    </div>
   );
 }
 

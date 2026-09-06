@@ -174,13 +174,31 @@
   animation: caption-in 220ms ease-out both;
 }
 
+/* The tally light on the live badge — on air, still recording. */
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.65);
+  }
+}
+
+.live-dot {
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reel-animate li:last-child .reel-enter,
   .reel-animate li:last-child .reel-enter-fade,
   .reel-animate li:last-child .reel-enter-spawn,
   .reel-animate > .reel-enter,
   .caption-in,
-  .caret {
+  .caret,
+  .live-dot {
     animation: none;
   }
 

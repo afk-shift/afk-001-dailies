@@ -5,21 +5,26 @@
  * `usePlayback` owns it; the transport, the chapter rail, the reel, and the
  * side panel all read from it and seek it.
  *
+ * The supercut itself is state too, because `?live=1` lets a session keep
+ * growing under the playhead while you watch it.
+ *
  * From `lg` up the player owns the viewport: slate band on top, transport
  * welded to the bottom edge, and the reel the only thing that scrolls. Below
  * that it is an ordinary document.
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Supercut } from '../../lib/types';
 import { ChapterRail, currentChapterIndex } from './ChapterRail';
 import { EndCard } from './EndCard';
 import { HighlightCaption } from './HighlightCaption';
+import { LivePill } from './LivePill';
 import { buildHueMap } from './model-colors';
 import { Reel } from './Reel';
 import { SidePanel, type RevealedFile } from './SidePanel';
 import { SlateBand } from './SlateBand';
 import { Transport } from './Transport';
+import { useLikelyRunning, useLiveFollow } from './useLiveFollow';
 import { usePlayback, type PlaybackMode } from './usePlayback';
 import { useReducedMotion } from './useReducedMotion';
 
@@ -32,13 +37,21 @@ interface PlayerProps {
   initialIndex?: number;
   /** Starting cut, from `?cut=` on the server. */
   initialMode?: PlaybackMode;
+  /** Follow a still-running session, from `?live=1` on the server. */
+  initialLive?: boolean;
 }
 
 export function Player({
-  supercut,
+  supercut: published,
   initialIndex = 0,
   initialMode = 'linear',
+  initialLive = false,
 }: PlayerProps) {
+  // A followed session grows, so the document the page renders is state, not
+  // the prop. Each poll replaces it whole.
+  const [supercut, setSupercut] = useState(published);
+  const [live, setLive] = useState(initialLive);
+
   const { events, chapters } = supercut;
   const playback = usePlayback(
     events,
@@ -48,6 +61,23 @@ export function Player({
   );
   const { index, lastIndex, seek, step, toggle, toggleMode } = playback;
   const reducedMotion = useReducedMotion();
+
+  const follow = useLiveFollow(supercut.slug, live, events.length, setSupercut);
+  const likelyRunning = useLikelyRunning(supercut);
+
+  const toggleLive = useCallback(() => {
+    setLive((on) => !on);
+  }, []);
+
+  // `live` joins `?at=`/`?cut=` in the URL so the followed view is shareable.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('live') === live) return;
+    if (live) url.searchParams.set('live', '1');
+    else url.searchParams.delete('live');
+    window.history.replaceState(window.history.state, '', url);
+  }, [live]);
 
   const hues = useMemo(() => buildHueMap(supercut.cast), [supercut.cast]);
 
@@ -170,7 +200,19 @@ export function Player({
       id="supercut-player"
       className="w-full max-w-full overflow-x-clip lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden"
     >
-      <SlateBand supercut={supercut} />
+      <SlateBand
+        supercut={supercut}
+        badge={
+          <LivePill
+            live={live}
+            offer={likelyRunning}
+            reconnecting={follow.reconnecting}
+            updatedAt={follow.updatedAt}
+            added={follow.added}
+            onToggle={toggleLive}
+          />
+        }
+      />
 
       <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-x-8 gap-y-6 px-4 py-4 sm:px-6 md:grid-cols-[13rem_minmax(0,1fr)] lg:min-h-0 lg:flex-1 lg:grid-cols-[13rem_minmax(0,1fr)_17rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-y-0 lg:py-0">
         <ChapterRail chapters={chapters} index={index} onSeek={seek} />
