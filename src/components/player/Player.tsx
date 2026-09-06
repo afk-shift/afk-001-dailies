@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Supercut } from '../../lib/types';
 import { ChapterRail, currentChapterIndex } from './ChapterRail';
-import { EndCard } from './EndCard';
+import { EndCard, LiveEndCard } from './EndCard';
 import { HighlightCaption } from './HighlightCaption';
 import { LivePill } from './LivePill';
 import { buildHueMap } from './model-colors';
@@ -58,6 +58,7 @@ export function Player({
     supercut.narration?.highlights,
     initialIndex,
     initialMode,
+    live,
   );
   const { index, lastIndex, seek, step, toggle, toggleMode } = playback;
   const reducedMotion = useReducedMotion();
@@ -228,7 +229,11 @@ export function Player({
           hues={hues}
           endCard={
             atEnd ? (
-              <EndCard supercut={supercut} onReplay={playback.play} />
+              live ? (
+                <LiveEndCard />
+              ) : (
+                <EndCard supercut={supercut} onReplay={playback.play} />
+              )
             ) : null
           }
         />

@@ -76,3 +76,22 @@ export function EndCard({
     </div>
   );
 }
+
+/**
+ * Stands in for the end card while the reel is following a live session and
+ * the playhead is parked at the tip — the session isn't over, so there's
+ * nothing to recap and no reason to offer a replay.
+ */
+export function LiveEndCard() {
+  return (
+    <div className="reel-enter-fade mt-1 mb-3 ml-[4.5rem] flex items-center gap-2.5 rounded-md border border-line bg-ink-raised px-4 py-3">
+      <span
+        aria-hidden="true"
+        className="live-dot block h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+      />
+      <p className="font-mono text-[11px] text-muted">
+        Following live — new events appear here
+      </p>
+    </div>
+  );
+}

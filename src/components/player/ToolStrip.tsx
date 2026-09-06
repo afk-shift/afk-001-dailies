@@ -29,7 +29,7 @@ function ToolPill({ event, hue }: { event: ToolEvent; hue: string }) {
   return (
     <span
       title={`${event.tool} — ${event.label}`}
-      className={`inline-flex max-w-[20rem] items-center gap-1.5 rounded-sm border border-line/70 bg-ink-raised px-2 py-1 font-mono text-[11px] ${
+      className={`inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-sm border border-line/70 bg-ink-raised px-2 py-1 font-mono text-[11px] ${
         failed ? 'text-danger ring-1 ring-danger/80' : 'text-muted'
       }`}
       style={{ borderLeftColor: hue, borderLeftWidth: '2px' }}

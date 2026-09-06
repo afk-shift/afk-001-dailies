@@ -148,12 +148,18 @@ function segmentAt(segments: CutSegment[], index: number): number {
  * position gets written, including a trip back down to 0 — except that if the
  * URL had no `at` param to begin with, returning to 0 removes the param again
  * rather than leaving a stray `?at=0` behind.
+ *
+ * Also stays hands-off while `suppressed` — live following, parked at the
+ * tip — since every incoming batch would otherwise pin a meaningless
+ * position. A user who seeks away from the tip stops being suppressed and
+ * writes normally.
  */
 function useDeepLink(
   index: number,
   initialIndex: number,
   mode: PlaybackMode,
   initialMode: PlaybackMode,
+  suppressed: boolean,
 ): void {
   const pending = useRef<number | null>(null);
   const lastWrite = useRef(0);
@@ -170,6 +176,15 @@ function useDeepLink(
 
     if (hadAtParam.current === null) {
       hadAtParam.current = new URL(window.location.href).searchParams.has('at');
+    }
+
+    if (suppressed) {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+      pending.current = null;
+      return;
     }
 
     if (!dirtied.current) {
@@ -206,7 +221,7 @@ function useDeepLink(
       timer.current = null;
       if (pending.current !== null) write(pending.current);
     }, URL_THROTTLE_MS - elapsed);
-  }, [index, initialIndex, mode, initialMode]);
+  }, [index, initialIndex, mode, initialMode, suppressed]);
 
   useEffect(() => {
     return () => {
@@ -220,6 +235,7 @@ export function usePlayback(
   highlights: Narration['highlights'] | undefined,
   initialIndex = 0,
   initialMode: PlaybackMode = 'linear',
+  live = false,
 ): Playback {
   const last = Math.max(0, events.length - 1);
 
@@ -249,7 +265,7 @@ export function usePlayback(
   // came back".
   const startIndex = useRef(index).current;
   const startMode = useRef(mode).current;
-  useDeepLink(index, startIndex, mode, startMode);
+  useDeepLink(index, startIndex, mode, startMode, live && index === last);
 
   // A live session growing under the playhead. Someone parked at the tip rides
   // it forward; anyone reading further back keeps their place. Neither touches

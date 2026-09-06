@@ -16,7 +16,7 @@ interface ReelRowProps {
 
 export function ReelRow({ dtMs, isCurrent, children }: ReelRowProps) {
   return (
-    <li className="grid grid-cols-[3.25rem_1.25rem_minmax(0,1fr)]">
+    <li className="grid w-full min-w-0 max-w-full grid-cols-[3.25rem_1.25rem_minmax(0,1fr)]">
       <span className="pt-1 pr-1 text-right font-mono text-[10px] text-muted/60 tabular-nums">
         {formatClock(dtMs)}
       </span>
@@ -136,7 +136,7 @@ export function SpawnChip({
       <span className="shrink-0 font-mono text-[11px]" style={{ color: hue }}>
         spawned
       </span>
-      <span className="truncate font-mono text-[11px] text-muted">
+      <span className="min-w-0 truncate font-mono text-[11px] text-muted">
         · {description || 'subagent'}
       </span>
     </div>
@@ -147,7 +147,7 @@ export function MilestoneDivider({ text }: { text: string }) {
   return (
     <div className="reel-enter-fade flex items-center gap-3 pt-1">
       <span className="h-px w-5 shrink-0 bg-line" />
-      <span className="shrink-0 font-mono text-[10px] tracking-wider text-muted uppercase">
+      <span className="min-w-0 truncate font-mono text-[10px] tracking-wider text-muted uppercase">
         {text}
       </span>
       <span className="h-px flex-1 bg-line" />
