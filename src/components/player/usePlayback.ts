@@ -30,10 +30,9 @@ export interface Playback {
   index: number;
   playing: boolean;
   speed: number;
-  /** True once playback has run off the end and auto-paused. */
-  ended: boolean;
   /** True when the last move came from the timer — gates entrance motion. */
   animating: boolean;
+  /** Highest reachable index: `events.length - 1`, or 0 when empty. */
   lastIndex: number;
   play: () => void;
   pause: () => void;
@@ -93,7 +92,6 @@ export function usePlayback(events: Event[], initialIndex = 0): Playback {
   const [speedIdx, setSpeedIdx] = useState(0);
   const [animating, setAnimating] = useState(false);
   const speed = SPEEDS[speedIdx] ?? 1;
-  const ended = !playing && index >= last && last > 0;
 
   useDeepLink(index);
 
@@ -153,7 +151,6 @@ export function usePlayback(events: Event[], initialIndex = 0): Playback {
     index,
     playing,
     speed,
-    ended,
     animating,
     lastIndex: last,
     play,
