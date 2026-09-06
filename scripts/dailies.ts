@@ -6,6 +6,7 @@
  *
  * Usage:
  *   npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--update <slug>] [--site https://...] [--no-narrate]
+ *   npm run dailies -- <sessionId|path/to/session.jsonl> --watch [--interval 20] [--update <slug>] [--no-narrate] [--site https://...]
  */
 
 import * as fs from 'node:fs';
@@ -13,6 +14,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseSessionWithRedactions, type SessionInput } from '../src/lib/parse';
 import type { Supercut } from '../src/lib/types';
+import { formatTickLine, initWatchState, resolveIntervalSeconds, stop, tick, type WatchSnapshot } from './lib/watch';
 
 const DEFAULT_SITE_URL = 'https://surprise-me-001.netlify.app';
 const MAX_OUTPUT_FILENAME_LENGTH = 80;
@@ -25,15 +27,20 @@ interface CliArgs {
   site?: string;
   noNarrate: boolean;
   update?: string;
+  watch: boolean;
+  interval?: number;
 }
 
 function usage(): string {
-  return 'Usage: npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--update <slug>] [--site https://...] [--no-narrate]';
+  return (
+    'Usage: npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--update <slug>] [--site https://...] [--no-narrate]\n' +
+    '       npm run dailies -- <sessionId|path/to/session.jsonl> --watch [--interval 20] [--update <slug>] [--no-narrate] [--site https://...]'
+  );
 }
 
 function parseArgs(argv: string[]): CliArgs {
   const positional: string[] = [];
-  const args: CliArgs = { input: '', dryRun: false, feature: false, noNarrate: false };
+  const args: CliArgs = { input: '', dryRun: false, feature: false, noNarrate: false, watch: false };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -43,12 +50,21 @@ function parseArgs(argv: string[]): CliArgs {
       args.feature = true;
     } else if (arg === '--no-narrate') {
       args.noNarrate = true;
+    } else if (arg === '--watch') {
+      args.watch = true;
     } else if (arg === '--title') {
       args.title = argv[++i];
     } else if (arg === '--site') {
       args.site = argv[++i];
     } else if (arg === '--update') {
       args.update = argv[++i];
+    } else if (arg === '--interval') {
+      const raw = argv[++i];
+      const parsed = raw === undefined ? Number.NaN : Number(raw);
+      if (!Number.isFinite(parsed)) {
+        throw new Error(`--interval requires a numeric value (seconds)\n${usage()}`);
+      }
+      args.interval = parsed;
     } else if (arg.startsWith('--')) {
       throw new Error(`Unknown flag: ${arg}\n${usage()}`);
     } else {
@@ -222,12 +238,20 @@ async function postJson(url: string, token: string, body: unknown): Promise<Resp
   });
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+interface LoadedSession {
+  supercut: Supercut;
+  redactionCount: number;
+  sessionId: string;
+}
 
-  loadRepoEnv();
-
-  const resolved = resolveInput(args.input);
+/**
+ * Resolves `input` to a transcript, parses it (main file + subagents dir,
+ * both read fresh off disk on every call), and redacts. Called once for the
+ * one-shot path and repeatedly — main + subagents dir re-read each time, so
+ * newly-appeared subagent files are picked up — by the `--watch` loop.
+ */
+function loadSession(input: string, titleOverride?: string): LoadedSession {
+  const resolved = resolveInput(input);
   const mainLines = readLines(resolved.mainFile);
   const { cwd, sessionId: firstLineSessionId } = parseFirstLine(mainLines);
   const sessionId = firstLineSessionId || path.basename(resolved.mainFile, '.jsonl');
@@ -235,15 +259,155 @@ async function main(): Promise<void> {
   const subagents = loadSubagents(resolved.subagentsDir);
 
   const { supercut, redactionCount } = parseSessionWithRedactions({ sessionId, project, lines: mainLines, subagents });
-  if (args.title) supercut.title = args.title;
+  if (titleOverride) supercut.title = titleOverride;
 
-  printSummary(supercut, redactionCount);
+  return { supercut, redactionCount, sessionId };
+}
+
+interface PublishOptions {
+  site: string;
+  token: string;
+  /** Omitted from the wire body (server default is on) unless explicitly false. */
+  narrate: boolean;
+  /** Publish over an existing slug (`--update`, or the watch loop's own slug) instead of minting a new one. */
+  slug?: string;
+}
+
+/** POSTs a Supercut to `/api/publish` and returns its published `{ slug, url }`. */
+async function publishSupercut(supercut: Supercut, opts: PublishOptions): Promise<{ slug: string; url: string }> {
+  const publishBody: Record<string, unknown> = { ...supercut };
+  if (!opts.narrate) publishBody.narrate = false;
+  if (opts.slug) publishBody.slug = opts.slug;
+  const publishRes = await postJson(`${opts.site}/api/publish`, opts.token, publishBody);
+  if (!publishRes.ok) {
+    const body = await publishRes.text();
+    throw new Error(`Publish failed: ${publishRes.status}\n${body}`);
+  }
+  return (await publishRes.json()) as { slug: string; url: string };
+}
+
+function requireToken(): string {
+  const token = process.env.DAILIES_PUBLISH_TOKEN;
+  if (!token) {
+    throw new Error(
+      'DAILIES_PUBLISH_TOKEN is not set. Add it to .env in the repo root, or export it before running.',
+    );
+  }
+  return token;
+}
+
+function resolveSite(args: CliArgs): string {
+  return (args.site || process.env.DAILIES_SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, '');
+}
+
+function snapshotOf(supercut: Supercut): WatchSnapshot {
+  return { eventsLength: supercut.events.length, toolCalls: supercut.stats.toolCalls };
+}
+
+/**
+ * `npm run dailies -- <sessionId|path> --watch [--interval 20]` — follows a
+ * still-running session and republishes over the same slug as it grows. See
+ * `scripts/lib/watch.ts` for the pure change-detection / tick logic driven
+ * from this loop.
+ */
+async function runWatch(args: CliArgs, token: string, site: string): Promise<void> {
+  const intervalMs = resolveIntervalSeconds(args.interval) * 1000;
+
+  const first = loadSession(args.input, args.title);
+  printSummary(first.supercut, first.redactionCount);
+
+  const published = await publishSupercut(first.supercut, {
+    site,
+    token,
+    narrate: false,
+    slug: args.update,
+  });
+  const slug = published.slug;
+
+  console.log(`\n${published.url}?live=1`);
+  console.log('Watching… (Ctrl-C to stop)');
+
+  let state = initWatchState(snapshotOf(first.supercut));
+  let stopping = false;
+  let busy = false;
+
+  const finish = async (): Promise<void> => {
+    try {
+      const loaded = loadSession(args.input, args.title);
+      const { command } = stop(state, snapshotOf(loaded.supercut), args.noNarrate);
+      // `stop` always returns `{ kind: 'republish', ... }` — see scripts/lib/watch.ts.
+      if (command.kind !== 'republish') throw new Error('unreachable: stop() always republishes');
+      const finalPublished = await publishSupercut(loaded.supercut, {
+        site,
+        token,
+        narrate: command.narrate,
+        slug,
+      });
+      console.log(`Final publish with narration: ${finalPublished.url}`);
+      process.exit(0);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+  };
+
+  const timer = setInterval(() => {
+    if (stopping || busy) return;
+    busy = true;
+    void (async () => {
+      try {
+        const loaded = loadSession(args.input, args.title);
+        const { state: nextState, command } = tick(state, snapshotOf(loaded.supercut));
+        if (command.kind === 'republish') {
+          state = nextState;
+          await publishSupercut(loaded.supercut, { site, token, narrate: false, slug });
+          console.log(
+            formatTickLine(new Date(), command.deltaEvents, loaded.supercut.stats.toolCalls, loaded.supercut.stats.commits),
+          );
+        }
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        busy = false;
+      }
+    })();
+  }, intervalMs);
+
+  process.on('SIGINT', () => {
+    if (stopping) return;
+    stopping = true;
+    clearInterval(timer);
+    void finish();
+  });
+
+  // Keep the process alive; `finish()` calls `process.exit` explicitly.
+  await new Promise<void>(() => {});
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.watch && args.dryRun) {
+    throw new Error(`--watch cannot be combined with --dry-run\n${usage()}`);
+  }
+
+  loadRepoEnv();
+
+  if (args.watch) {
+    const token = requireToken();
+    const site = resolveSite(args);
+    await runWatch(args, token, site);
+    return;
+  }
+
+  const loaded = loadSession(args.input, args.title);
+  printSummary(loaded.supercut, loaded.redactionCount);
 
   if (args.dryRun) {
     const outDir = path.join(process.cwd(), 'dailies-out');
     fs.mkdirSync(outDir, { recursive: true });
     const resolvedOutDir = path.resolve(outDir);
-    const outFilename = `${safeFilenameFromSessionId(sessionId)}.json`;
+    const outFilename = `${safeFilenameFromSessionId(loaded.sessionId)}.json`;
     const outPath = path.resolve(outDir, outFilename);
     // Defense in depth: outFilename is already sanitized to [A-Za-z0-9_-],
     // but assert the resolved path can't have escaped outDir before writing.
@@ -252,29 +416,20 @@ async function main(): Promise<void> {
     }
     // Compact (not pretty-printed) so the output matches exactly what
     // `/api/publish` receives — e.g. a `"version":1` substring check.
-    fs.writeFileSync(outPath, JSON.stringify(supercut));
+    fs.writeFileSync(outPath, JSON.stringify(loaded.supercut));
     console.log(`\nWrote ${path.relative(process.cwd(), outPath)} (dry run — nothing published)`);
     return;
   }
 
-  const token = process.env.DAILIES_PUBLISH_TOKEN;
-  if (!token) {
-    throw new Error(
-      'DAILIES_PUBLISH_TOKEN is not set. Add it to .env in the repo root, or export it before running.',
-    );
-  }
+  const token = requireToken();
+  const site = resolveSite(args);
 
-  const site = (args.site || process.env.DAILIES_SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, '');
-
-  const publishBody: Record<string, unknown> = { ...supercut };
-  if (args.noNarrate) publishBody.narrate = false;
-  if (args.update) publishBody.slug = args.update;
-  const publishRes = await postJson(`${site}/api/publish`, token, publishBody);
-  if (!publishRes.ok) {
-    const body = await publishRes.text();
-    throw new Error(`Publish failed: ${publishRes.status}\n${body}`);
-  }
-  const published = (await publishRes.json()) as { slug: string; url: string };
+  const published = await publishSupercut(loaded.supercut, {
+    site,
+    token,
+    narrate: !args.noNarrate,
+    slug: args.update,
+  });
   console.log(`\nPublished: ${published.url}`);
   if (!args.noNarrate) {
     console.log('Narration is generating in the background (~30s); refresh the page.');

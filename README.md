@@ -28,8 +28,14 @@ Flags:
 | `--title "..."` | Override the title (the narrator may still refine it) |
 | `--feature` | Make this supercut the one linked from the homepage |
 | `--update <slug>` | Re-publish over an existing slug instead of minting a new one (works alongside `--feature`) |
-| `--no-narrate` | Skip AI narration for this publish |
+| `--no-narrate` | Skip AI narration for this publish (in `--watch`, skip narration on the final Ctrl-C publish too) |
 | `--site https://...` | Publish to a different deployment |
+| `--watch` | Follow a still-running session, republishing over the same slug as it grows (incompatible with `--dry-run`) |
+| `--interval <seconds>` | Poll interval for `--watch` (default 20, minimum 5) |
+
+## Watch mode
+
+`npm run dailies -- <sessionId|path> --watch [--interval 20]` follows a session that's still writing to its transcript. The first tick parses and publishes immediately (narration off) and prints the replay URL with `?live=1` appended. Every interval, it re-reads the main transcript and subagents directory — picking up new subagent files as they appear — and republishes over the same slug only if the event count or tool-call count changed, printing a compact `hh:mm:ss  +N events · tools T · commits C` line per update (silent otherwise). Press Ctrl-C to stop: it does one final publish with narration on (unless `--no-narrate`) and exits.
 
 ## The publish token
 
