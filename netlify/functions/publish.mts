@@ -54,25 +54,28 @@ export default async (req: Request): Promise<Response> => {
   await putSupercut(redacted);
 
   // AI narration runs out of the request path, in a background function —
-  // a synchronous call here could time out waiting on the LLM. Fire the
-  // trigger and don't wait on it; publish already succeeded. Callers opt
-  // out per-request with `{ narrate: false }` (the CLI's `--no-narrate`),
+  // /api/narrate returns 202 immediately without waiting on the LLM, so
+  // awaiting it here only waits on the trigger, not the generation. Callers
+  // opt out per-request with `{ narrate: false }` (the CLI's `--no-narrate`),
   // and the site can be killed server-side with `DAILIES_NARRATE=off`.
   const clientWantsNarration = !(isPlainObject(body) && body.narrate === false);
   if (clientWantsNarration && Netlify.env.get('DAILIES_NARRATE') !== 'off') {
+    // Do not make this fire-and-forget: the invocation may freeze before
+    // the request leaves, so the narrate trigger would never be sent.
     try {
-      fetch(new URL('/api/narrate', req.url), {
+      const res = await fetch(new URL('/api/narrate', req.url), {
         method: 'POST',
         headers: {
           authorization: req.headers.get('authorization') ?? '',
           'content-type': 'application/json',
         },
         body: JSON.stringify({ slug: redacted.slug }),
-      }).catch((err: unknown) => {
-        console.error('[narrate] trigger request failed:', err);
       });
+      if (!res.ok) {
+        console.error(`[publish] narrate trigger failed: ${res.status}`);
+      }
     } catch (err) {
-      console.error('[narrate] trigger failed:', err);
+      console.error(`[publish] narrate trigger failed: ${err}`);
     }
   }
 
