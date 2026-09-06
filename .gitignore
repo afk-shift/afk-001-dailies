@@ -11,6 +11,10 @@ dist
 # environment variables
 .env
 .env.*
+!.env.example
 
 # claude
 .claude/scheduled_tasks.lock
+
+# dailies CLI dry-run output
+dailies-out/

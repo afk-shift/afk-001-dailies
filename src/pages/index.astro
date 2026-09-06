@@ -1,5 +1,17 @@
 ---
 import Base from '../layouts/Base.astro';
+import { getFeaturedSlug } from '../lib/store';
+
+let featuredSlug = 'demo';
+try {
+  const slug = await getFeaturedSlug();
+  if (slug) featuredSlug = slug;
+} catch (err) {
+  // Blobs isn't available in every local dev setup — never 500 the
+  // homepage over it, just fall back to the demo supercut.
+  console.error('getFeaturedSlug() failed, falling back to demo:', err);
+}
+const featuredHref = `/s/${featuredSlug}`;
 
 const steps = [
   {
@@ -78,11 +90,11 @@ const steps = [
       Featured
     </h2>
     <a
-      href="/s/demo"
+      href={featuredHref}
       class="mt-6 flex items-center justify-between gap-6 rounded-lg border border-line bg-ink-raised px-6 py-5 transition-colors hover:border-accent/60"
     >
       <div>
-        <p class="font-mono text-xs text-accent">/s/demo</p>
+        <p class="font-mono text-xs text-accent">{featuredHref}</p>
         <p class="mt-1 text-base font-medium text-paper">
           A first look at a Dailies supercut
         </p>

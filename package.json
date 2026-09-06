@@ -9,11 +9,14 @@
     "preview": "astro preview",
     "typecheck": "astro check",
     "astro": "astro",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dailies": "tsx scripts/dailies.ts"
   },
   "dependencies": {
     "@astrojs/netlify": "^8.2.5",
     "@astrojs/react": "^6.0.5",
+    "@netlify/blobs": "^10.7.13",
+    "@netlify/functions": "^6.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.3.1",
     "react": "^19.2.8",
@@ -24,6 +27,7 @@
     "@astrojs/check": "^0.9.10",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
   },
