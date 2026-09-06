@@ -1,9 +1,3 @@
-/**
- * The narration's highlights, pinned to the track as diamonds — the same
- * shape the reel uses for the frame you're parked on. Hovering or focusing
- * one reads out what happens there; clicking seeks to it.
- */
-
 import type { HighlightWindow } from './usePlayback';
 
 interface HighlightMarkersProps {

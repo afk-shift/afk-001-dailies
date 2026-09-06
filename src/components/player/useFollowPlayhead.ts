@@ -31,7 +31,6 @@ function distanceFromBottom(element: HTMLElement): number {
 export function useFollowPlayhead(
   scroller: RefObject<HTMLDivElement | null>,
   index: number,
-  itemCount: number,
   playing: boolean,
 ): () => void {
   const following = useRef(true);
@@ -52,7 +51,7 @@ export function useFollowPlayhead(
 
     const overshoot = distanceFromBottom(element);
     if (overshoot > 0) window.scrollBy(0, overshoot);
-  }, [scroller, index, itemCount]);
+  }, [scroller, index]);
 
   useEffect(() => {
     const onScroll = () => {

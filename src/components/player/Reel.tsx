@@ -87,7 +87,7 @@ export function Reel({
     return map;
   }, [chapters]);
 
-  const onScroll = useFollowPlayhead(scroller, index, items.length, playing);
+  const onScroll = useFollowPlayhead(scroller, index, playing);
 
   return (
     <div

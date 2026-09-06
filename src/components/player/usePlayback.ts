@@ -237,8 +237,9 @@ export function usePlayback(
   const [mode, setMode] = useState<PlaybackMode>(
     hasSupercut ? initialMode : 'linear',
   );
-  const [cutStep, setCutStep] = useState(() =>
-    segmentAt(segments, clamp(initialIndex, last)),
+  const cutStep = useMemo(
+    () => segmentAt(segments, index),
+    [segments, index],
   );
   const [dissolving, setDissolving] = useState(false);
   const speed = SPEEDS[speedIdx] ?? 1;
@@ -272,7 +273,6 @@ export function usePlayback(
             setPlaying(false);
             return;
           }
-          setCutStep(cutStep + 1);
           setAnimating(true);
           setIndex(next.from);
         }, DISSOLVE_MS);
@@ -326,7 +326,6 @@ export function usePlayback(
     // Rolling past the end and hitting play again starts the reel over.
     if (index >= last) {
       if (mode === 'supercut' && segments[0]) {
-        setCutStep(0);
         setIndex(segments[0].from);
       } else {
         setIndex(0);
@@ -351,9 +350,8 @@ export function usePlayback(
       setDissolving(false);
       setAnimating(false);
       setIndex(target);
-      setCutStep(segmentAt(segments, target));
     },
-    [last, segments],
+    [last],
   );
 
   const seek = useCallback((next: number) => moveTo(next), [moveTo]);
@@ -379,7 +377,6 @@ export function usePlayback(
     const first = segments[0];
     if (!first) return;
     setMode('supercut');
-    setCutStep(0);
     setDissolving(false);
     setAnimating(true);
     setIndex(first.from);

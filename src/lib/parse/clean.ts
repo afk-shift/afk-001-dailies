@@ -11,8 +11,7 @@ const COMMAND_NAME_RE = /<command-name>[\s\S]*?<\/command-name>/g;
 const COMMAND_MESSAGE_RE = /<command-message>[\s\S]*?<\/command-message>/g;
 const COMMAND_ARGS_RE = /<command-args>[\s\S]*?<\/command-args>/g;
 
-// --- Minimal markdown-to-plain-text conversion, used only by `cleanReplyText`
-// (never `cleanPromptText` — Sean's typed prompts stay verbatim). ---
+// --- Reply markdown normalization; user prompts remain unchanged. ---
 
 /** A fenced code block: ```lang\n...body...\n``` (language tag optional). */
 const FENCED_CODE_RE = /```[^\n`]*\r?\n?([\s\S]*?)```/g;
