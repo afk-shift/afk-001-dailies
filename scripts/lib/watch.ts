@@ -80,6 +80,26 @@ export function stop(state: WatchState, snapshot: WatchSnapshot, noNarrate: bool
   };
 }
 
+/**
+ * SIGINT sequencing: waits out a tick that's already in flight (if any) —
+ * swallowing whatever it throws, since a failed tick must never block the
+ * final publish — before running `publishFinal`. Without this, a SIGINT
+ * that lands mid-tick can let that tick's own (non-narrated) publish
+ * complete *after* the final narrated publish and clobber it. Callers
+ * (`scripts/dailies.ts`) supply the in-flight tick promise they're tracking
+ * and a `publishFinal` closure that re-reads the transcript and does the
+ * final narrated publish, so this stays pure I/O-wise and testable.
+ */
+export async function finalizeWatch(
+  activeTick: Promise<unknown> | null,
+  publishFinal: () => Promise<void>,
+): Promise<void> {
+  if (activeTick) {
+    await activeTick.catch(() => {});
+  }
+  await publishFinal();
+}
+
 /** Formats the compact per-update line: `hh:mm:ss  +N events · tools T · commits C`. */
 export function formatTickLine(now: Date, deltaEvents: number, toolCalls: number, commits: number): string {
   const pad = (n: number) => n.toString().padStart(2, '0');

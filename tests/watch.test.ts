@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_INTERVAL_SECONDS,
   MIN_INTERVAL_SECONDS,
+  finalizeWatch,
   formatTickLine,
   hasChanged,
   initWatchState,
@@ -110,6 +111,52 @@ describe('stop (final-publish-on-stop, SIGINT)', () => {
     const ticked = tick(state, { eventsLength: 16, toolCalls: 6 });
     expect(stopped.command).toMatchObject({ final: true });
     expect(ticked.command).toMatchObject({ final: false });
+  });
+});
+
+describe('finalizeWatch (SIGINT sequencing: final publish always lands last)', () => {
+  it('runs the final publish immediately when there is no in-flight tick', async () => {
+    const order: string[] = [];
+    await finalizeWatch(null, async () => {
+      order.push('final-publish');
+    });
+    expect(order).toEqual(['final-publish']);
+  });
+
+  it('waits for an in-flight tick to settle before running the final publish', async () => {
+    const order: string[] = [];
+    let resolveTick!: () => void;
+    const activeTick = new Promise<void>((resolve) => {
+      resolveTick = () => {
+        order.push('tick-settled');
+        resolve();
+      };
+    });
+
+    const done = finalizeWatch(activeTick, async () => {
+      order.push('final-publish');
+    });
+
+    // Give the microtask queue a couple of turns: the final publish must
+    // not run yet, since it's still waiting on the in-flight tick.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual([]);
+
+    resolveTick();
+    await done;
+    expect(order).toEqual(['tick-settled', 'final-publish']);
+  });
+
+  it('still runs the final publish when the in-flight tick rejected', async () => {
+    const order: string[] = [];
+    const activeTick = Promise.reject(new Error('tick failed'));
+
+    await finalizeWatch(activeTick, async () => {
+      order.push('final-publish');
+    });
+
+    expect(order).toEqual(['final-publish']);
   });
 });
 

@@ -210,7 +210,9 @@ export function Player({
             reconnecting={follow.reconnecting}
             updatedAt={follow.updatedAt}
             added={follow.added}
+            stopped={follow.stopped}
             onToggle={toggleLive}
+            onResume={follow.resume}
           />
         }
       />

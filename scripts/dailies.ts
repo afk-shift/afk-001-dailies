@@ -14,7 +14,15 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseSessionWithRedactions, type SessionInput } from '../src/lib/parse';
 import type { Supercut } from '../src/lib/types';
-import { formatTickLine, initWatchState, resolveIntervalSeconds, stop, tick, type WatchSnapshot } from './lib/watch';
+import {
+  finalizeWatch,
+  formatTickLine,
+  initWatchState,
+  resolveIntervalSeconds,
+  stop,
+  tick,
+  type WatchSnapshot,
+} from './lib/watch';
 
 const DEFAULT_SITE_URL = 'https://surprise-me-001.netlify.app';
 const MAX_OUTPUT_FILENAME_LENGTH = 80;
@@ -330,20 +338,57 @@ async function runWatch(args: CliArgs, token: string, site: string): Promise<voi
   let state = initWatchState(snapshotOf(first.supercut));
   let stopping = false;
   let busy = false;
+  // The currently in-flight tick's publish, if any — SIGINT waits for this
+  // before doing the final publish, so an older non-narrated publish can
+  // never land after (and clobber) the final narrated one.
+  let activeTick: Promise<void> | null = null;
+
+  const runTick = async (): Promise<void> => {
+    try {
+      const loaded = loadSession(args.input, args.title);
+      const { state: nextState, command } = tick(state, snapshotOf(loaded.supercut));
+      if (command.kind === 'republish') {
+        state = nextState;
+        await publishSupercut(loaded.supercut, { site, token, narrate: false, slug });
+        console.log(
+          formatTickLine(new Date(), command.deltaEvents, loaded.supercut.stats.toolCalls, loaded.supercut.stats.commits),
+        );
+      }
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  };
+
+  const timer = setInterval(() => {
+    if (stopping || busy) return;
+    busy = true;
+    activeTick = runTick();
+  }, intervalMs);
+
+  /**
+   * Re-reads the transcript and does the final narrated publish. Only
+   * called from `finish()`, after any in-flight tick has settled — so this
+   * is always the last write for the slug.
+   */
+  const publishFinal = async (): Promise<void> => {
+    const loaded = loadSession(args.input, args.title);
+    const { command } = stop(state, snapshotOf(loaded.supercut), args.noNarrate);
+    // `stop` always returns `{ kind: 'republish', ... }` — see scripts/lib/watch.ts.
+    if (command.kind !== 'republish') throw new Error('unreachable: stop() always republishes');
+    const finalPublished = await publishSupercut(loaded.supercut, {
+      site,
+      token,
+      narrate: command.narrate,
+      slug,
+    });
+    console.log(`Final publish with narration: ${finalPublished.url}`);
+  };
 
   const finish = async (): Promise<void> => {
     try {
-      const loaded = loadSession(args.input, args.title);
-      const { command } = stop(state, snapshotOf(loaded.supercut), args.noNarrate);
-      // `stop` always returns `{ kind: 'republish', ... }` — see scripts/lib/watch.ts.
-      if (command.kind !== 'republish') throw new Error('unreachable: stop() always republishes');
-      const finalPublished = await publishSupercut(loaded.supercut, {
-        site,
-        token,
-        narrate: command.narrate,
-        slug,
-      });
-      console.log(`Final publish with narration: ${finalPublished.url}`);
+      await finalizeWatch(activeTick, publishFinal);
       process.exit(0);
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
@@ -351,30 +396,12 @@ async function runWatch(args: CliArgs, token: string, site: string): Promise<voi
     }
   };
 
-  const timer = setInterval(() => {
-    if (stopping || busy) return;
-    busy = true;
-    void (async () => {
-      try {
-        const loaded = loadSession(args.input, args.title);
-        const { state: nextState, command } = tick(state, snapshotOf(loaded.supercut));
-        if (command.kind === 'republish') {
-          state = nextState;
-          await publishSupercut(loaded.supercut, { site, token, narrate: false, slug });
-          console.log(
-            formatTickLine(new Date(), command.deltaEvents, loaded.supercut.stats.toolCalls, loaded.supercut.stats.commits),
-          );
-        }
-      } catch (err) {
-        console.error(err instanceof Error ? err.message : String(err));
-      } finally {
-        busy = false;
-      }
-    })();
-  }, intervalMs);
-
   process.on('SIGINT', () => {
-    if (stopping) return;
+    if (stopping) {
+      // A second SIGINT while the final publish is still in flight: bail
+      // immediately rather than let it interleave with another attempt.
+      process.exit(130);
+    }
     stopping = true;
     clearInterval(timer);
     void finish();
