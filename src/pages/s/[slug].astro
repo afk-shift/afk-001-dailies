@@ -1,0 +1,32 @@
+---
+import Base from '../../layouts/Base.astro';
+
+// A later slice reads the supercut for `slug` from Netlify Blobs and
+// renders the animated replay player. For now, every slug 404s.
+const { slug } = Astro.params;
+
+Astro.response.status = 404;
+---
+
+<Base title="Not found">
+  <section
+    class="mx-auto flex max-w-5xl flex-col items-start px-6 py-24"
+  >
+    <p class="font-mono text-xs tracking-widest text-accent uppercase">
+      404
+    </p>
+    <h1 class="mt-4 text-3xl font-semibold tracking-tight text-paper">
+      Supercut <span class="font-mono text-accent">{slug}</span> not found
+    </h1>
+    <p class="mt-4 max-w-md text-muted">
+      This replay doesn't exist yet, or it hasn't been published. Check the
+      link, or head back and watch the demo instead.
+    </p>
+    <a
+      href="/"
+      class="mt-8 inline-flex items-center gap-2 rounded-md border border-line px-4 py-2 font-mono text-sm text-paper transition-colors hover:border-accent/60"
+    >
+      &larr; back to dailies
+    </a>
+  </section>
+</Base>

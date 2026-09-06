@@ -1,0 +1,67 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Dailies',
+  description = 'Supercuts of your Claude Code sessions.',
+} = Astro.props;
+
+const pageTitle = title === 'Dailies' ? title : `${title} · Dailies`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="description" content={description} />
+    <title>{pageTitle}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen bg-ink font-sans antialiased">
+    <div
+      class="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(255,138,61,0.12),transparent)]"
+    >
+    </div>
+    <div class="relative flex min-h-screen flex-col">
+      <header class="border-b border-line/60">
+        <div
+          class="mx-auto flex max-w-5xl items-center justify-between px-6 py-5"
+        >
+          <a
+            href="/"
+            class="font-mono text-sm font-semibold tracking-tight text-paper"
+          >
+            <span class="text-accent">&gt;</span> dailies
+          </a>
+          <nav class="font-mono text-xs text-muted">
+            <a href="/s/demo" class="transition-colors hover:text-paper"
+              >demo</a
+            >
+          </nav>
+        </div>
+      </header>
+      <main class="relative flex-1">
+        <slot />
+      </main>
+      <footer class="border-t border-line/60">
+        <div
+          class="mx-auto max-w-5xl px-6 py-6 font-mono text-xs text-muted"
+        >
+          built with claude code
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

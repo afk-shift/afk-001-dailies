@@ -1,2 +1,16 @@
 # Local Netlify folder
 .netlify
+
+# dependencies
+node_modules
+
+# build output
+dist
+.astro
+
+# environment variables
+.env
+.env.*
+
+# claude
+.claude/scheduled_tasks.lock

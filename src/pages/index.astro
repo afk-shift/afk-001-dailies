@@ -1,0 +1,97 @@
+---
+import Base from '../layouts/Base.astro';
+
+const steps = [
+  {
+    n: '01',
+    title: 'Run the CLI on a session',
+    body: 'Point it at a Claude Code transcript on your machine. It parses the turns, tool calls, file edits, and commits into a compact timeline.',
+  },
+  {
+    n: '02',
+    title: 'It publishes a supercut',
+    body: 'The timeline is packaged into a small JSON supercut and pushed straight to this site — no accounts, no dashboards to configure.',
+  },
+  {
+    n: '03',
+    title: 'Share the replay',
+    body: 'Send the link. Anyone who opens it watches your session play back as an animated, scrubbable replay.',
+  },
+];
+---
+
+<Base>
+  <section class="mx-auto max-w-5xl px-6 pb-20 pt-16 sm:pt-24">
+    <p class="font-mono text-xs tracking-widest text-accent uppercase">
+      dailies
+    </p>
+    <h1
+      class="mt-4 max-w-2xl text-4xl font-semibold tracking-tight text-paper sm:text-5xl"
+    >
+      Supercuts of your Claude Code sessions.
+    </h1>
+    <p class="mt-5 max-w-xl text-lg leading-relaxed text-muted">
+      Every session is a story — prompts, tool calls, files touched,
+      commits made. Dailies turns the transcript into a tight, watchable
+      replay you can send in one link.
+    </p>
+    <div class="mt-8 flex flex-wrap items-center gap-4">
+      <a
+        href="/s/demo"
+        class="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 font-mono text-sm font-medium text-ink transition-colors hover:bg-accent-dim"
+      >
+        Watch the demo
+      </a>
+      <code
+        class="rounded-md border border-line bg-ink-raised px-4 py-2.5 font-mono text-sm text-muted"
+      >
+        npx dailies publish ./session.jsonl
+      </code>
+    </div>
+  </section>
+
+  <section class="border-t border-line/60 bg-ink-raised/40">
+    <div class="mx-auto max-w-5xl px-6 py-16">
+      <h2 class="font-mono text-xs tracking-widest text-muted uppercase">
+        How it works
+      </h2>
+      <div class="mt-8 grid gap-8 sm:grid-cols-3">
+        {
+          steps.map((step) => (
+            <div>
+              <span class="font-mono text-sm text-accent">{step.n}</span>
+              <h3 class="mt-2 text-lg font-medium text-paper">
+                {step.title}
+              </h3>
+              <p class="mt-2 text-sm leading-relaxed text-muted">
+                {step.body}
+              </p>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-6 py-16">
+    <h2 class="font-mono text-xs tracking-widest text-muted uppercase">
+      Featured
+    </h2>
+    <a
+      href="/s/demo"
+      class="mt-6 flex items-center justify-between gap-6 rounded-lg border border-line bg-ink-raised px-6 py-5 transition-colors hover:border-accent/60"
+    >
+      <div>
+        <p class="font-mono text-xs text-accent">/s/demo</p>
+        <p class="mt-1 text-base font-medium text-paper">
+          A first look at a Dailies supercut
+        </p>
+        <p class="mt-1 text-sm text-muted">
+          The replay format is coming in a later build — this slot is
+          reserved for it.
+        </p>
+      </div>
+      <span class="font-mono text-sm text-muted">&rarr;</span>
+    </a>
+  </section>
+</Base>
