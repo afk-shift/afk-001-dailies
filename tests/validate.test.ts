@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEventShape, validateSupercutShape } from '../netlify/functions/_shared/validate';
+import { isValidEventShape, isValidSlugShape, validateSupercutShape } from '../netlify/functions/_shared/validate';
 
 function validBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -100,5 +100,39 @@ describe('validateSupercutShape', () => {
     if (result.ok) {
       expect(result.value.events).toHaveLength(5000);
     }
+  });
+});
+
+describe('isValidSlugShape', () => {
+  it('accepts a 10-character lowercase base32 (a-z2-7) slug', () => {
+    expect(isValidSlugShape('abcdefghij')).toBe(true);
+    expect(isValidSlugShape('a2b3c4d5e6')).toBe(true);
+  });
+
+  it('rejects a slug with digits 0, 1, 8, or 9 (outside the base32 alphabet)', () => {
+    expect(isValidSlugShape('abcdefghi0')).toBe(false);
+    expect(isValidSlugShape('abcdefghi1')).toBe(false);
+    expect(isValidSlugShape('abcdefghi8')).toBe(false);
+    expect(isValidSlugShape('abcdefghi9')).toBe(false);
+  });
+
+  it('rejects an uppercase slug', () => {
+    expect(isValidSlugShape('ABCDEFGHIJ')).toBe(false);
+  });
+
+  it('rejects the wrong length (too short or too long)', () => {
+    expect(isValidSlugShape('abcdefghi')).toBe(false); // 9 chars
+    expect(isValidSlugShape('abcdefghijk')).toBe(false); // 11 chars
+  });
+
+  it('rejects a non-string value', () => {
+    expect(isValidSlugShape(12345)).toBe(false);
+    expect(isValidSlugShape(null)).toBe(false);
+    expect(isValidSlugShape(undefined)).toBe(false);
+  });
+
+  it('rejects a slug with non-alphanumeric characters', () => {
+    expect(isValidSlugShape('abcdefgh-j')).toBe(false);
+    expect(isValidSlugShape('../../etc/passwd')).toBe(false);
   });
 });

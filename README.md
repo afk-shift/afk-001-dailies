@@ -27,6 +27,7 @@ Flags:
 | `--dry-run` | Parse only; writes `dailies-out/<sessionId>.json`, no network |
 | `--title "..."` | Override the title (the narrator may still refine it) |
 | `--feature` | Make this supercut the one linked from the homepage |
+| `--update <slug>` | Re-publish over an existing slug instead of minting a new one (works alongside `--feature`) |
 | `--no-narrate` | Skip AI narration for this publish |
 | `--site https://...` | Publish to a different deployment |
 
@@ -43,6 +44,10 @@ netlify env:get DAILIES_PUBLISH_TOKEN --context production
 The supercut contains prompt text, assistant reply text (capped), one-line tool labels (a command's first line, a file path, a pattern), commit messages, subagent names and models, counts, and timestamps. Tool results are never included. Every string is passed through a secret redactor (API keys, tokens, JWTs, credential URLs, private keys, `KEY=value` assignments) both in the CLI and again on the server before storage. The CLI prints how many redactions it applied; review with `--dry-run` if that number surprises you.
 
 Pages are unlisted: the slug is random and server-generated, and only the featured supercut is linked from the homepage.
+
+### Data
+
+Every replay at `/s/<slug>` has a matching `/s/<slug>.json`, returning the same resolved Supercut as raw JSON (`demo` works too). It's uncached (`cache-control: no-store`), so it's safe to fetch right after an `--update`.
 
 ## Stack
 

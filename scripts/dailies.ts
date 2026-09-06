@@ -5,7 +5,7 @@
  * Dailies site via `POST /api/publish`.
  *
  * Usage:
- *   npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--site https://...] [--no-narrate]
+ *   npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--update <slug>] [--site https://...] [--no-narrate]
  */
 
 import * as fs from 'node:fs';
@@ -24,10 +24,11 @@ interface CliArgs {
   feature: boolean;
   site?: string;
   noNarrate: boolean;
+  update?: string;
 }
 
 function usage(): string {
-  return 'Usage: npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--site https://...] [--no-narrate]';
+  return 'Usage: npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--update <slug>] [--site https://...] [--no-narrate]';
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -46,6 +47,8 @@ function parseArgs(argv: string[]): CliArgs {
       args.title = argv[++i];
     } else if (arg === '--site') {
       args.site = argv[++i];
+    } else if (arg === '--update') {
+      args.update = argv[++i];
     } else if (arg.startsWith('--')) {
       throw new Error(`Unknown flag: ${arg}\n${usage()}`);
     } else {
@@ -137,22 +140,31 @@ function readLines(filePath: string): string[] {
   return fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
 }
 
-/** Best-effort parse of the first JSON line, for `cwd` and `sessionId`. */
-function parseFirstLine(lines: string[]): { cwd: string; sessionId: string } {
+/**
+ * Best-effort scan for `cwd` and `sessionId`: a transcript's very first line
+ * is often a sidecar line (e.g. a `mode`/`bridge-session` line) that carries
+ * neither field, so this keeps scanning until it finds a line with a string
+ * `cwd` and, separately, a line with a string `sessionId` — they need not be
+ * the same line — rather than trusting whatever the first parseable line
+ * happens to have.
+ */
+export function parseFirstLine(lines: string[]): { cwd: string; sessionId: string } {
+  let cwd = '';
+  let sessionId = '';
   for (const line of lines) {
+    if (cwd && sessionId) break;
     const trimmed = line.trim();
     if (!trimmed) continue;
+    let obj: Record<string, unknown>;
     try {
-      const obj = JSON.parse(trimmed) as Record<string, unknown>;
-      return {
-        cwd: typeof obj.cwd === 'string' ? obj.cwd : '',
-        sessionId: typeof obj.sessionId === 'string' ? obj.sessionId : '',
-      };
+      obj = JSON.parse(trimmed) as Record<string, unknown>;
     } catch {
       continue;
     }
+    if (!cwd && typeof obj.cwd === 'string') cwd = obj.cwd;
+    if (!sessionId && typeof obj.sessionId === 'string') sessionId = obj.sessionId;
   }
-  return { cwd: '', sessionId: '' };
+  return { cwd, sessionId };
 }
 
 function loadSubagents(subagentsDir: string | null): SessionInput['subagents'] {
@@ -254,7 +266,9 @@ async function main(): Promise<void> {
 
   const site = (args.site || process.env.DAILIES_SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, '');
 
-  const publishBody = args.noNarrate ? { ...supercut, narrate: false } : supercut;
+  const publishBody: Record<string, unknown> = { ...supercut };
+  if (args.noNarrate) publishBody.narrate = false;
+  if (args.update) publishBody.slug = args.update;
   const publishRes = await postJson(`${site}/api/publish`, token, publishBody);
   if (!publishRes.ok) {
     const body = await publishRes.text();
@@ -276,7 +290,14 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exitCode = 1;
-});
+// Only run the CLI when this file is executed directly (`tsx scripts/dailies.ts`
+// / `npm run dailies`) — not when a test imports it for its pure helpers
+// (e.g. `parseFirstLine`), which would otherwise trigger `main()` as a
+// module-load side effect.
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  main().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  });
+}

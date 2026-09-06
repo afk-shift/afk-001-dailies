@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseJsonl, parseSession, type SessionInput } from '../src/lib/parse';
-import { cleanPromptText } from '../src/lib/parse/clean';
+import { cleanPromptText, cleanReplyText, stripReplyMarkdown } from '../src/lib/parse/clean';
 import { extractCommitMessage, isGitCommitCommand } from '../src/lib/parse/labels';
 import { redactSecrets } from '../src/lib/parse/redact';
 import type { CommitEvent, MilestoneEvent, PromptEvent, SpawnEvent, ToolEvent } from '../src/lib/types';
@@ -371,6 +371,51 @@ describe('cleanPromptText', () => {
   });
 });
 
+describe('stripReplyMarkdown / cleanReplyText', () => {
+  it('strips ** and __ bold markers, keeping their content', () => {
+    expect(stripReplyMarkdown('**Dailies** is done. So is __the parser__.')).toBe('Dailies is done. So is the parser.');
+  });
+
+  it('strips single backticks, keeping their content', () => {
+    expect(stripReplyMarkdown('Run `npm test` to check.')).toBe('Run npm test to check.');
+  });
+
+  it('collapses a fenced code block to its first line, prefixed "code: "', () => {
+    const raw = ['Here you go:', '```ts', 'const x = 1;', 'console.log(x);', '```', 'Done.'].join('\n');
+    expect(stripReplyMarkdown(raw)).toBe(['Here you go:', 'code: const x = 1;', 'Done.'].join('\n'));
+  });
+
+  it('collapses an empty fenced code block to just "code:"', () => {
+    const raw = ['```', '```'].join('\n');
+    expect(stripReplyMarkdown(raw)).toBe('code:');
+  });
+
+  it('turns a markdown link into its link text', () => {
+    expect(stripReplyMarkdown('See the [README](https://example.com/README.md) for details.')).toBe(
+      'See the README for details.',
+    );
+  });
+
+  it('strips a leading heading marker at a line start', () => {
+    expect(stripReplyMarkdown('## Summary\nEverything shipped.')).toBe('Summary\nEverything shipped.');
+  });
+
+  it('strips leading bullet and ordered-list markers at line starts', () => {
+    const raw = ['Changes:', '- Added the parser', '* Added the player', '1. Wrote the README'].join('\n');
+    expect(stripReplyMarkdown(raw)).toBe(['Changes:', 'Added the parser', 'Added the player', 'Wrote the README'].join('\n'));
+  });
+
+  it('does not touch prompt text — only cleanReplyText applies markdown stripping', () => {
+    expect(cleanPromptText('**Please** run `npm test` now.')).toBe('**Please** run `npm test` now.');
+  });
+
+  it('cleanReplyText strips markdown, then collapses whitespace and caps length', () => {
+    expect(cleanReplyText('**Dailies** is ready. Run `npm test` to check.')).toBe(
+      'Dailies is ready. Run npm test to check.',
+    );
+  });
+});
+
 describe('redactSecrets', () => {
   it('masks an Anthropic-style key', () => {
     expect(redactSecrets('key is sk-ant-api03-FAKEFAKE here')).toBe('key is [redacted] here');
@@ -464,6 +509,27 @@ describe('extractCommitMessage', () => {
 
   it('returns an empty string when a real commit has no message and no known fallback flag', () => {
     expect(extractCommitMessage('git commit')).toBe('');
+  });
+
+  it('extracts the real subject from a heredoc commit whose body documents `-m "..."`/`--message=` usage (regression: a real session produced "`." here)', () => {
+    // Shape of a real `git commit` call whose body — describing a fix to
+    // this very function — contains a literal `"` (inside backticks) right
+    // after an embedded "--message=" mention. The naive quote-matching
+    // extractor used to stop at that embedded `"`, and the equals-sign
+    // fallback then grabbed the stray "`." right after it as the "message".
+    const command = [
+      'git add labels.ts && git commit -m "$(cat <<\'EOF\'',
+      'Fix heredoc commit messages, stray ?at=0, and unexpandable tool strips',
+      '',
+      '- extractCommitMessage now unwraps `-m "$(cat <<\'EOF2\' ... )"` heredoc',
+      '  bodies (taking the first non-empty line after the opener), and also',
+      "  handles `-m subject -m body` (first wins) and `--message=`.",
+      '',
+      'Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>',
+      'EOF',
+      ')"',
+    ].join('\n');
+    expect(extractCommitMessage(command)).toBe('Fix heredoc commit messages, stray ?at=0, and unexpandable tool strips');
   });
 });
 

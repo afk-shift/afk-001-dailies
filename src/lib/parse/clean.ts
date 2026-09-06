@@ -11,6 +11,40 @@ const COMMAND_NAME_RE = /<command-name>[\s\S]*?<\/command-name>/g;
 const COMMAND_MESSAGE_RE = /<command-message>[\s\S]*?<\/command-message>/g;
 const COMMAND_ARGS_RE = /<command-args>[\s\S]*?<\/command-args>/g;
 
+// --- Minimal markdown-to-plain-text conversion, used only by `cleanReplyText`
+// (never `cleanPromptText` — Sean's typed prompts stay verbatim). ---
+
+/** A fenced code block: ```lang\n...body...\n``` (language tag optional). */
+const FENCED_CODE_RE = /```[^\n`]*\r?\n?([\s\S]*?)```/g;
+/** A markdown link: `[text](url)`. */
+const MARKDOWN_LINK_RE = /\[([^\]]*)\]\([^)]*\)/g;
+/** A heading (`#`..`######`), bullet (`-`/`*`), or ordered-list (`1.`) marker at the start of a line. */
+const LEADING_MARKUP_RE = /^[ \t]*(?:#{1,6}[ \t]+|[-*][ \t]+|\d+\.[ \t]+)/gm;
+
+/**
+ * Converts a minimal subset of markdown in assistant reply text to plain
+ * text, so raw formatting (`**bold**`, single backticks, fenced code, links,
+ * heading/list markers) never shows up literally in a rendered replay:
+ *   - a fenced code block collapses to its first line, prefixed `code: `
+ *     (an empty block becomes just `code:`)
+ *   - `[text](url)` becomes `text`
+ *   - backtick characters are dropped, keeping their content
+ *   - `**`/`__` bold markers are dropped, keeping their content
+ *   - a leading `#`/`-`/`*`/`1.` heading or list marker at a line's start is
+ *     dropped
+ */
+export function stripReplyMarkdown(raw: string): string {
+  let text = raw.replace(FENCED_CODE_RE, (_match, body: string) => {
+    const firstLine = (body.split(/\r?\n/)[0] ?? '').trim();
+    return firstLine ? `code: ${firstLine}` : 'code:';
+  });
+  text = text.replace(MARKDOWN_LINK_RE, '$1');
+  text = text.replace(/`/g, '');
+  text = text.replace(/\*\*/g, '').replace(/__/g, '');
+  text = text.replace(LEADING_MARKUP_RE, '');
+  return text;
+}
+
 /** Collapses all runs of whitespace (including newlines) to a single space. */
 export function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
@@ -46,9 +80,12 @@ export function cleanPromptText(raw: string): string {
     .trim();
 }
 
-/** Cleans assistant reply text: collapse whitespace, cap at ~600 chars. */
+/**
+ * Cleans assistant reply text: converts minimal markdown to plain text (see
+ * `stripReplyMarkdown`), collapses whitespace, and caps at ~600 chars.
+ */
 export function cleanReplyText(raw: string): string {
-  return truncateWithEllipsis(collapseWhitespace(raw), 600);
+  return truncateWithEllipsis(collapseWhitespace(stripReplyMarkdown(raw)), 600);
 }
 
 /** Cleans text destined for a title/chapter-title: collapse, cap at 80 chars, no ellipsis. */

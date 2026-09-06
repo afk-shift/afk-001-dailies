@@ -8,6 +8,14 @@ import type { Event, Supercut } from '../../../src/lib/types';
 
 const MAX_EVENTS = 5000;
 
+/** The server's slug shape: 10 lowercase base32 (RFC 4648, no padding) characters — see `generateSlug` in `src/lib/store.ts`. */
+const SLUG_RE = /^[a-z2-7]{10}$/;
+
+/** True when `value` is a string matching the required slug shape (used to validate a client-supplied `--update` slug). */
+export function isValidSlugShape(value: unknown): value is string {
+  return typeof value === 'string' && SLUG_RE.test(value);
+}
+
 const STRING_FIELDS = ['title', 'sessionId', 'project', 'startedAt', 'endedAt'] as const;
 const ARRAY_FIELDS = ['events', 'chapters', 'cast', 'files'] as const;
 

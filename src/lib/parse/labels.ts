@@ -80,18 +80,22 @@ export function isGitCommitCommand(command: string): boolean {
  *   EOF
  *   )"
  *
- * The naive `-m "..."` capture grabs that whole blob, whose first line is
- * just the heredoc opener (`$(cat <<'EOF'`) — not a usable message.
+ * Bash does not apply quote-escaping rules inside a heredoc body — a literal
+ * `"` or `` ` `` in the body text (e.g. a commit body that *documents* a
+ * `-m "..."` flag, or mentions `--message=`) is perfectly valid and does not
+ * end the outer double-quoted argument early. So this can't be parsed with
+ * the naive `-m "..."` quote-matching below (which stops at the *first*
+ * following `"`, wherever that lands inside the body) — it has to find the
+ * real heredoc terminator instead: a line consisting of just the delimiter
+ * (captured via backreference, so it can't be fooled by the delimiter name
+ * merely appearing mid-line in the body), followed by the closing `)"`.
  */
-function isHeredocOpener(value: string): boolean {
-  return /^\$\(cat <<-?'?EOF'?\s*$/.test(value.trimStart().split(/\r?\n/)[0] ?? '');
-}
+const HEREDOC_MESSAGE_RE =
+  /(?:-m|--message)\s+"\$\(cat <<-?'?([A-Za-z0-9_]+)'?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*\1[ \t]*\r?\n\)"/;
 
-/** First non-empty line after the heredoc opener line — the real subject. */
-function firstLineAfterHeredocOpener(value: string): string {
-  const lines = value.split(/\r?\n/);
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+/** First non-empty line of a heredoc body — the real subject. */
+function firstNonEmptyLine(value: string): string {
+  for (const line of value.split(/\r?\n/)) {
     if (line.trim().length > 0) return line;
   }
   return '';
@@ -129,9 +133,17 @@ function hasFlag(command: string, flag: string): boolean {
  * no extractable message falls back to `''`.
  */
 export function extractCommitMessage(command: string): string {
+  // Try the heredoc-aware match first — it locates the real terminator line
+  // rather than the first following `"`, so it's immune to a body that
+  // itself contains a `"` or backtick (e.g. one documenting `-m`/`--message=`
+  // usage, as a real commit in this repo's own history did).
+  const heredocMatch = command.match(HEREDOC_MESSAGE_RE);
+  if (heredocMatch) {
+    return firstNonEmptyLine(heredocMatch[2] ?? '');
+  }
+
   const raw = extractRawMessageValue(command);
   if (raw) {
-    if (isHeredocOpener(raw)) return firstLineAfterHeredocOpener(raw);
     return raw.split(/\r?\n/)[0] ?? '';
   }
 
