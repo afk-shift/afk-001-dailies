@@ -218,7 +218,8 @@ function subagentLabel(meta: unknown, fallback: string): string {
   return fallback;
 }
 
-export function parseSession(input: SessionInput): Supercut {
+/** Builds the un-redacted `Supercut` for a session. Shared by `parseSession` and `parseSessionWithRedactions`. */
+function assembleSupercut(input: SessionInput): Supercut {
   const mainLines = parseMainLines(input.lines, input.sessionId);
   const toolUseIdToSubagent = buildToolUseIdToSubagentId(input.subagents);
   const errorMap = buildErrorMap(mainLines);
@@ -428,5 +429,24 @@ export function parseSession(input: SessionInput): Supercut {
     files: filesArr,
   };
 
-  return deepRedact(supercut);
+  return supercut;
+}
+
+/**
+ * Parses a session and redacts secrets from the resulting `Supercut` (see
+ * `redact.ts`). This is the entry point every consumer should use — the
+ * unredacted `assembleSupercut` above is not exported.
+ */
+export function parseSession(input: SessionInput): Supercut {
+  return deepRedact(assembleSupercut(input)).value;
+}
+
+/**
+ * Same as `parseSession`, but also reports how many redactions were applied
+ * — used by the Dailies CLI to print a "Redactions applied: N" line so a
+ * human knows to double-check the output before publishing.
+ */
+export function parseSessionWithRedactions(input: SessionInput): { supercut: Supercut; redactionCount: number } {
+  const { value, count } = deepRedact(assembleSupercut(input));
+  return { supercut: value, redactionCount: count };
 }

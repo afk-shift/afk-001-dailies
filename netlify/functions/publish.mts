@@ -6,12 +6,12 @@
 
 import type { Config } from '@netlify/functions';
 import { narrate } from '../../src/lib/narrate';
+import { deepRedact } from '../../src/lib/parse/redact';
 import { generateSlug, putSupercut } from '../../src/lib/store';
-import type { Supercut } from '../../src/lib/types';
 import { checkAuthToken, jsonResponse } from './_shared/auth';
+import { validateSupercutShape } from './_shared/validate';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2 MB
-const MAX_EVENTS = 5000;
 
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {
@@ -47,81 +47,25 @@ export default async (req: Request): Promise<Response> => {
   // Server-assigned, never trust a client-provided slug.
   supercut.slug = generateSlug();
 
+  // Defense in depth: the local CLI already redacts before publishing, but
+  // never trust a client-submitted payload — redact the full object again
+  // server-side before it's narrated or persisted.
+  const { value: redacted } = deepRedact(supercut);
+
   try {
-    supercut.narration = await narrate(supercut);
+    redacted.narration = await narrate(redacted);
   } catch (err) {
     // Narration is best-effort — never let it block publish.
     console.error('narrate() failed, publishing without narration:', err);
   }
 
-  await putSupercut(supercut);
+  await putSupercut(redacted);
 
-  const url = `${new URL(req.url).origin}/s/${supercut.slug}`;
-  return jsonResponse({ slug: supercut.slug, url }, 201);
+  const url = `${new URL(req.url).origin}/s/${redacted.slug}`;
+  return jsonResponse({ slug: redacted.slug, url }, 201);
 };
 
 export const config: Config = {
   path: '/api/publish',
   method: ['POST'],
 };
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-type ValidationResult = { ok: true; value: Supercut } | { ok: false; error: string };
-
-const STRING_FIELDS = ['title', 'sessionId', 'project', 'startedAt', 'endedAt'] as const;
-const ARRAY_FIELDS = ['events', 'chapters', 'cast', 'files'] as const;
-
-/**
- * Validates the top-level shape the spec requires (version, string fields,
- * array fields, a stats object) and caps `events` at `MAX_EVENTS`. Does not
- * deep-validate individual event/cast/chapter/file shapes — the parser is
- * the only trusted producer of those, and this endpoint only needs to keep
- * out obviously-malformed payloads.
- */
-function validateSupercutShape(body: unknown): ValidationResult {
-  if (!isPlainObject(body)) {
-    return { ok: false, error: 'Body must be a JSON object' };
-  }
-
-  if (body.version !== 1) {
-    return { ok: false, error: 'version must be 1' };
-  }
-
-  for (const field of STRING_FIELDS) {
-    if (typeof body[field] !== 'string') {
-      return { ok: false, error: `${field} must be a string` };
-    }
-  }
-
-  for (const field of ARRAY_FIELDS) {
-    if (!Array.isArray(body[field])) {
-      return { ok: false, error: `${field} must be an array` };
-    }
-  }
-
-  if (!isPlainObject(body.stats)) {
-    return { ok: false, error: 'stats must be an object' };
-  }
-
-  const events = (body.events as unknown[]).slice(0, MAX_EVENTS);
-
-  const supercut: Supercut = {
-    version: 1,
-    slug: '', // assigned server-side below
-    title: body.title as string,
-    sessionId: body.sessionId as string,
-    project: body.project as string,
-    startedAt: body.startedAt as string,
-    endedAt: body.endedAt as string,
-    stats: body.stats as unknown as Supercut['stats'],
-    cast: body.cast as Supercut['cast'],
-    chapters: body.chapters as Supercut['chapters'],
-    events: events as Supercut['events'],
-    files: body.files as Supercut['files'],
-  };
-
-  return { ok: true, value: supercut };
-}

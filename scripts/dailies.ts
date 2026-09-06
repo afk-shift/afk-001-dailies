@@ -11,10 +11,11 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parseSession, type SessionInput } from '../src/lib/parse';
+import { parseSessionWithRedactions, type SessionInput } from '../src/lib/parse';
 import type { Supercut } from '../src/lib/types';
 
 const DEFAULT_SITE_URL = 'https://surprise-me-001.netlify.app';
+const MAX_OUTPUT_FILENAME_LENGTH = 80;
 
 interface CliArgs {
   input: string;
@@ -118,6 +119,17 @@ function resolveInput(arg: string): ResolvedInput {
   return { mainFile: found, subagentsDir: fs.existsSync(subagentsDir) ? subagentsDir : null };
 }
 
+/**
+ * Derives a filesystem-safe base filename from a (potentially attacker- or
+ * transcript-controlled) sessionId: only `[A-Za-z0-9_-]` survives, anything
+ * else becomes `_`, capped at 80 chars, falling back to `session` if that
+ * leaves nothing usable.
+ */
+function safeFilenameFromSessionId(sessionId: string): string {
+  const sanitized = sessionId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, MAX_OUTPUT_FILENAME_LENGTH);
+  return sanitized || 'session';
+}
+
 function readLines(filePath: string): string[] {
   return fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
 }
@@ -163,7 +175,7 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
 }
 
-function printSummary(supercut: Supercut): void {
+function printSummary(supercut: Supercut, redactionCount: number): void {
   console.log(supercut.title || '(untitled session)');
   console.log(`  duration:    ${formatDuration(supercut.stats.durationMs)}`);
   console.log(`  turns:       ${supercut.stats.turns}`);
@@ -173,6 +185,10 @@ function printSummary(supercut: Supercut): void {
   const cast = supercut.cast.map((c) => `${c.label} (${c.model || 'unknown model'})`).join(', ');
   console.log(`  cast:        ${cast || '(none)'}`);
   console.log(`  tokens:      ${supercut.stats.inputTokens.toLocaleString()} in / ${supercut.stats.outputTokens.toLocaleString()} out`);
+  console.log(`Redactions applied: ${redactionCount}`);
+  if (redactionCount > 0) {
+    console.log('  hint: secrets were found and masked — review the output with --dry-run before publishing.');
+  }
 }
 
 /** Loads .env from the repo root only — never any other .env file. */
@@ -203,15 +219,22 @@ async function main(): Promise<void> {
   const project = cwd ? path.basename(cwd) : 'unknown';
   const subagents = loadSubagents(resolved.subagentsDir);
 
-  const supercut = parseSession({ sessionId, project, lines: mainLines, subagents });
+  const { supercut, redactionCount } = parseSessionWithRedactions({ sessionId, project, lines: mainLines, subagents });
   if (args.title) supercut.title = args.title;
 
-  printSummary(supercut);
+  printSummary(supercut, redactionCount);
 
   if (args.dryRun) {
     const outDir = path.join(process.cwd(), 'dailies-out');
     fs.mkdirSync(outDir, { recursive: true });
-    const outPath = path.join(outDir, `${sessionId}.json`);
+    const resolvedOutDir = path.resolve(outDir);
+    const outFilename = `${safeFilenameFromSessionId(sessionId)}.json`;
+    const outPath = path.resolve(outDir, outFilename);
+    // Defense in depth: outFilename is already sanitized to [A-Za-z0-9_-],
+    // but assert the resolved path can't have escaped outDir before writing.
+    if (!outPath.startsWith(resolvedOutDir + path.sep)) {
+      throw new Error(`Refusing to write outside of output directory: ${outPath}`);
+    }
     // Compact (not pretty-printed) so the output matches exactly what
     // `/api/publish` receives — e.g. a `"version":1` substring check.
     fs.writeFileSync(outPath, JSON.stringify(supercut));
