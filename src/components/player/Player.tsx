@@ -1,0 +1,192 @@
+/**
+ * The supercut player — one React island for the whole of /s/[slug].
+ *
+ * Everything below is a view of a single piece of state: the event index.
+ * `usePlayback` owns it; the transport, the chapter rail, the reel, and the
+ * side panel all read from it and seek it.
+ */
+
+import { useCallback, useEffect, useMemo } from 'react';
+import type { Supercut } from '../../lib/types';
+import { CastStrip } from './CastStrip';
+import { ChapterRail, currentChapterIndex } from './ChapterRail';
+import { EndCard } from './EndCard';
+import { Header } from './Header';
+import { buildHueMap } from './model-colors';
+import { Reel } from './Reel';
+import { SidePanel, type RevealedFile } from './SidePanel';
+import { Transport } from './Transport';
+import { usePlayback } from './usePlayback';
+import { useReducedMotion } from './useReducedMotion';
+
+/** Tools whose label is the path they wrote to — how files get revealed. */
+const FILE_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit']);
+
+interface PlayerProps {
+  supercut: Supercut;
+  /** Starting position, from `?at=` on the server. Always starts paused. */
+  initialIndex?: number;
+}
+
+export function Player({ supercut, initialIndex = 0 }: PlayerProps) {
+  const { events, chapters } = supercut;
+  const playback = usePlayback(events, initialIndex);
+  const { index, lastIndex, seek, step, toggle } = playback;
+  const reducedMotion = useReducedMotion();
+
+  const hues = useMemo(() => buildHueMap(supercut.cast), [supercut.cast]);
+
+  // A file is revealed the first time a file-touching tool names it. Files
+  // only ever touched inside a subagent never appear as events, so they
+  // surface at the end of the reel instead of never.
+  const files: RevealedFile[] = useMemo(() => {
+    const firstTouch = new Map<string, number>();
+    for (const event of events) {
+      if (event.kind !== 'tool' || !FILE_TOOLS.has(event.tool)) continue;
+      if (!firstTouch.has(event.label)) firstTouch.set(event.label, event.i);
+    }
+    return supercut.files.map((file) => ({
+      ...file,
+      at: firstTouch.get(file.path) ?? lastIndex,
+    }));
+  }, [events, supercut.files, lastIndex]);
+
+  const soFar = useMemo(() => {
+    let toolCalls = 0;
+    let commits = 0;
+    for (let i = 0; i <= index && i < events.length; i++) {
+      const event = events[i]!;
+      if (event.kind === 'tool') toolCalls++;
+      else if (event.kind === 'commit') commits++;
+    }
+    return {
+      toolCalls,
+      commits,
+      files: files.filter((file) => file.at <= index).length,
+    };
+  }, [index, events, files]);
+
+  const jumpChapter = useCallback(
+    (direction: -1 | 1) => {
+      if (chapters.length === 0) return;
+      const current = currentChapterIndex(chapters, index);
+      // Going back from mid-chapter restarts the chapter first, the way a
+      // track-back button works.
+      if (direction === -1 && current >= 0) {
+        const start = chapters[current]!.startIndex;
+        if (index > start) {
+          seek(start);
+          return;
+        }
+      }
+      const target = Math.min(
+        Math.max(current + direction, 0),
+        chapters.length - 1,
+      );
+      seek(chapters[target]!.startIndex);
+    },
+    [chapters, index, seek],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName ?? '';
+      const onControl =
+        tag === 'INPUT' ||
+        tag === 'BUTTON' ||
+        tag === 'A' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable === true;
+
+      switch (event.key) {
+        case ' ':
+        case 'Spacebar':
+          // A focused button gets to handle its own space press.
+          if (onControl) return;
+          event.preventDefault();
+          toggle();
+          break;
+        case 'ArrowLeft':
+          // The scrubber already steps by one on its own.
+          if (tag === 'INPUT') return;
+          event.preventDefault();
+          step(-1);
+          break;
+        case 'ArrowRight':
+          if (tag === 'INPUT') return;
+          event.preventDefault();
+          step(1);
+          break;
+        case '[':
+          event.preventDefault();
+          jumpChapter(-1);
+          break;
+        case ']':
+          event.preventDefault();
+          jumpChapter(1);
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggle, step, jumpChapter]);
+
+  const atEnd = events.length > 0 && index >= lastIndex;
+
+  return (
+    <div id="supercut-player" className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+      <div className="pt-10 pb-6">
+        <Header supercut={supercut} />
+        <CastStrip cast={supercut.cast} />
+      </div>
+
+      <Transport
+        index={index}
+        lastIndex={lastIndex}
+        playing={playback.playing}
+        speed={playback.speed}
+        chapters={chapters}
+        current={events[index]}
+        onToggle={toggle}
+        onSeek={seek}
+        onCycleSpeed={playback.cycleSpeed}
+      />
+
+      <div className="grid gap-x-8 gap-y-6 pt-4 pb-16 md:grid-cols-[13rem_minmax(0,1fr)] lg:grid-cols-[13rem_minmax(0,1fr)_17rem]">
+        <ChapterRail chapters={chapters} index={index} onSeek={seek} />
+
+        <Reel
+          events={events}
+          chapters={chapters}
+          index={index}
+          playing={playback.playing}
+          animating={playback.animating}
+          reducedMotion={reducedMotion}
+          hues={hues}
+          endCard={
+            atEnd ? (
+              <EndCard supercut={supercut} onReplay={playback.play} />
+            ) : null
+          }
+        />
+
+        <div className="md:col-span-2 lg:col-span-1">
+          <SidePanel
+            supercut={supercut}
+            index={index}
+            lastIndex={lastIndex}
+            soFar={soFar}
+            files={files}
+            onSeek={seek}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

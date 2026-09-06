@@ -4,14 +4,24 @@ import '../styles/global.css';
 interface Props {
   title?: string;
   description?: string;
+  /** Social title, when it should differ from the page title. */
+  ogTitle?: string;
+  /** Widens the header and footer to match a full-width page like the player. */
+  wide?: boolean;
 }
 
 const {
   title = 'Dailies',
   description = 'Supercuts of your Claude Code sessions.',
+  ogTitle,
+  wide = false,
 } = Astro.props;
 
-const pageTitle = title === 'Dailies' ? title : `${title} · Dailies`;
+const pageTitle = title === 'Dailies' ? title : `${title} — Dailies`;
+const socialTitle = ogTitle ?? pageTitle;
+const chrome = wide
+  ? 'mx-auto max-w-7xl px-4 sm:px-6'
+  : 'mx-auto max-w-5xl px-6';
 ---
 
 <!doctype html>
@@ -22,6 +32,12 @@ const pageTitle = title === 'Dailies' ? title : `${title} · Dailies`;
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="description" content={description} />
     <title>{pageTitle}</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={socialTitle} />
+    <meta property="og:description" content={description} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={socialTitle} />
+    <meta name="twitter:description" content={description} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -36,9 +52,7 @@ const pageTitle = title === 'Dailies' ? title : `${title} · Dailies`;
     </div>
     <div class="relative flex min-h-screen flex-col">
       <header class="border-b border-line/60">
-        <div
-          class="mx-auto flex max-w-5xl items-center justify-between px-6 py-5"
-        >
+        <div class:list={[chrome, 'flex items-center justify-between py-5']}>
           <a
             href="/"
             class="font-mono text-sm font-semibold tracking-tight text-paper"
@@ -56,9 +70,7 @@ const pageTitle = title === 'Dailies' ? title : `${title} · Dailies`;
         <slot />
       </main>
       <footer class="border-t border-line/60">
-        <div
-          class="mx-auto max-w-5xl px-6 py-6 font-mono text-xs text-muted"
-        >
+        <div class:list={[chrome, 'py-6 font-mono text-xs text-muted']}>
           built with claude code
         </div>
       </footer>

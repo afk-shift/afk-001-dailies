@@ -1,11 +1,9 @@
 ---
+import { formatDuration } from '../../components/player/format';
+import { Player } from '../../components/player/Player';
 import Base from '../../layouts/Base.astro';
 import { resolveSupercut } from '../../lib/get-supercut';
-import type { Event } from '../../lib/types';
 
-// This is a plain, server-rendered view of the supercut — slice 4 replaces
-// it with the animated, scrubbable player. Kept tidy but intentionally
-// unstyled beyond the Base layout basics.
 const { slug } = Astro.params;
 
 const supercut = slug ? await resolveSupercut(slug) : null;
@@ -14,34 +12,25 @@ if (!supercut) {
   Astro.response.status = 404;
 }
 
-function formatMs(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
+// `?at=<index>` deep links straight to a position in the reel. Resolving it
+// on the server keeps the island's first paint identical to its hydrated
+// state.
+const requested = Number(Astro.url.searchParams.get('at'));
+const initialIndex =
+  supercut && Number.isFinite(requested)
+    ? Math.min(
+        Math.max(0, Math.trunc(requested)),
+        Math.max(0, supercut.events.length - 1)
+      )
+    : 0;
 
-function formatDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
-}
+const count = (value: number, noun: string) =>
+  `${value} ${value === 1 ? noun : `${noun}s`}`;
 
-function eventText(event: Event): string {
-  switch (event.kind) {
-    case 'prompt':
-    case 'reply':
-      return event.text;
-    case 'tool':
-      return `${event.tool} — ${event.label}`;
-    case 'commit':
-      return event.message;
-    case 'spawn':
-      return event.description;
-    case 'milestone':
-      return event.text;
-  }
-}
+const title = supercut ? supercut.title || supercut.sessionId : '';
+const description = supercut
+  ? `${supercut.project} · ${count(supercut.stats.turns, 'turn')}, ${count(supercut.stats.toolCalls, 'tool call')}, ${count(supercut.stats.commits, 'commit')}, and ${count(supercut.stats.subagents, 'subagent')} in ${formatDuration(supercut.stats.durationMs)}.`
+  : '';
 ---
 
 {
@@ -67,72 +56,8 @@ function eventText(event: Event): string {
       </section>
     </Base>
   ) : (
-    <Base title={supercut.title || supercut.sessionId}>
-      <section class="mx-auto max-w-5xl px-6 py-16">
-        <p class="font-mono text-xs tracking-widest text-accent uppercase">
-          {supercut.project}
-        </p>
-        <h1 class="mt-3 text-3xl font-semibold tracking-tight text-paper sm:text-4xl">
-          {supercut.title || supercut.sessionId}
-        </h1>
-        <p class="mt-2 font-mono text-sm text-muted">
-          started {formatDate(supercut.startedAt)}
-        </p>
-
-        <dl class="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {[
-            ['duration', formatMs(supercut.stats.durationMs)],
-            ['turns', String(supercut.stats.turns)],
-            ['tool calls', `${supercut.stats.toolCalls} (${supercut.stats.toolErrors} errors)`],
-            ['files touched', String(supercut.stats.filesTouched)],
-            ['commits', String(supercut.stats.commits)],
-            ['subagents', String(supercut.stats.subagents)],
-            ['input tokens', supercut.stats.inputTokens.toLocaleString()],
-            ['output tokens', supercut.stats.outputTokens.toLocaleString()],
-          ].map(([label, value]) => (
-            <div class="rounded-md border border-line bg-ink-raised px-4 py-3">
-              <dt class="font-mono text-xs tracking-wide text-muted uppercase">
-                {label}
-              </dt>
-              <dd class="mt-1 text-lg font-medium text-paper">{value}</dd>
-            </div>
-          ))}
-        </dl>
-
-        <h2 class="mt-12 font-mono text-xs tracking-widest text-muted uppercase">
-          Cast
-        </h2>
-        <ul class="mt-4 flex flex-wrap gap-3">
-          {supercut.cast.map((member) => (
-            <li class="flex items-center gap-2 rounded-md border border-line bg-ink-raised px-3 py-2">
-              <span class="text-sm text-paper">{member.label}</span>
-              <span class="rounded-sm bg-accent/15 px-2 py-0.5 font-mono text-xs text-accent">
-                {member.model || 'unknown model'}
-              </span>
-              <span class="font-mono text-xs text-muted">
-                {member.toolCalls} calls
-              </span>
-            </li>
-          ))}
-        </ul>
-
-        <h2 class="mt-12 font-mono text-xs tracking-widest text-muted uppercase">
-          Events
-        </h2>
-        <ol class="mt-4 divide-y divide-line border-t border-b border-line">
-          {supercut.events.map((event) => (
-            <li class="flex items-start gap-4 py-3">
-              <span class="w-14 shrink-0 font-mono text-xs text-muted">
-                {formatMs(event.dtMs)}
-              </span>
-              <span class="w-20 shrink-0 font-mono text-xs tracking-wide text-accent uppercase">
-                {event.kind}
-              </span>
-              <span class="text-sm text-paper">{eventText(event)}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
+    <Base title={title} description={description} ogTitle={title} wide>
+      <Player supercut={supercut} initialIndex={initialIndex} client:load />
     </Base>
   )
 }
