@@ -29,7 +29,7 @@ function ChapterList({ chapters, index, onSeek }: ChapterRailProps) {
   const active = currentChapterIndex(chapters, index);
 
   return (
-    <ol className="flex gap-2 overflow-x-auto pb-1 md:flex-col md:gap-0.5 md:overflow-visible md:pb-0">
+    <ol className="flex w-full max-w-full gap-2 overflow-x-auto pb-1 md:flex-col md:gap-0.5 md:overflow-visible md:pb-0">
       {chapters.map((chapter, i) => {
         const isActive = i === active;
         return (
@@ -70,7 +70,7 @@ export function ChapterRail(props: ChapterRailProps) {
   return (
     <nav
       aria-label="Chapters"
-      className="lg:flex lg:h-full lg:min-h-0 lg:flex-col"
+      className="min-w-0 max-w-full lg:flex lg:h-full lg:min-h-0 lg:flex-col"
     >
       {/* Mobile: a strip that stays out of the way until you want it. */}
       <details className="group md:hidden">

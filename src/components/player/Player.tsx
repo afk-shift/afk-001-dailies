@@ -168,11 +168,11 @@ export function Player({
   return (
     <div
       id="supercut-player"
-      className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden"
+      className="w-full max-w-full overflow-x-clip lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden"
     >
       <SlateBand supercut={supercut} />
 
-      <div className="mx-auto grid w-full max-w-7xl gap-x-8 gap-y-6 px-4 py-4 sm:px-6 md:grid-cols-[13rem_minmax(0,1fr)] lg:min-h-0 lg:flex-1 lg:grid-cols-[13rem_minmax(0,1fr)_17rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-y-0 lg:py-0">
+      <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-x-8 gap-y-6 px-4 py-4 sm:px-6 md:grid-cols-[13rem_minmax(0,1fr)] lg:min-h-0 lg:flex-1 lg:grid-cols-[13rem_minmax(0,1fr)_17rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-y-0 lg:py-0">
         <ChapterRail chapters={chapters} index={index} onSeek={seek} />
 
         <Reel
