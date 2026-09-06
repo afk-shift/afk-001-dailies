@@ -1,8 +1,7 @@
 /**
  * The loudest object on the page, because this is a player. The track is
- * indexed by event, not by time — a scrubber over 21 events, with a tick
- * where each chapter opens — while the left-hand clock keeps reporting the
- * session's real elapsed time.
+ * indexed by event, not by time — a tick marks where each chapter opens —
+ * while the left-hand clock keeps reporting the session's real elapsed time.
  */
 
 import type { Chapter, Event } from '../../lib/types';

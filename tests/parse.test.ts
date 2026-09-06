@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseJsonl, parseSession, type SessionInput } from '../src/lib/parse';
 import { cleanPromptText } from '../src/lib/parse/clean';
-import { extractCommitMessage } from '../src/lib/parse/labels';
+import { extractCommitMessage, isGitCommitCommand } from '../src/lib/parse/labels';
 import { redactSecrets } from '../src/lib/parse/redact';
 import type { CommitEvent, MilestoneEvent, PromptEvent, SpawnEvent, ToolEvent } from '../src/lib/types';
 
@@ -389,6 +389,36 @@ describe('redactSecrets', () => {
   });
 });
 
+describe('isGitCommitCommand', () => {
+  it('matches a plain commit at the start of the command', () => {
+    expect(isGitCommitCommand('git commit -m "Add feature"')).toBe(true);
+  });
+
+  it('matches after a leading `cd ... &&`', () => {
+    expect(isGitCommitCommand('cd repo && git commit -m "Add feature"')).toBe(true);
+  });
+
+  it('matches after `;`, `||`, or `|`', () => {
+    expect(isGitCommitCommand('git status; git commit -m "x"')).toBe(true);
+    expect(isGitCommitCommand('git add -A || git commit -m "x"')).toBe(true);
+    expect(isGitCommitCommand('true | git commit -m "x"')).toBe(true);
+  });
+
+  it('matches `git commit -F -`', () => {
+    expect(isGitCommitCommand('git commit -F -')).toBe(true);
+  });
+
+  it('does not match "git commit" merely mentioned inside a quoted string', () => {
+    expect(isGitCommitCommand('echo "remember to git commit later"')).toBe(false);
+    expect(isGitCommitCommand('git log --grep="git commit"')).toBe(false);
+  });
+
+  it('does not match an unrelated command', () => {
+    expect(isGitCommitCommand('git status')).toBe(false);
+    expect(isGitCommitCommand('npm test')).toBe(false);
+  });
+});
+
 describe('extractCommitMessage', () => {
   it('unwraps a `$(cat <<\'EOF\' ... EOF)` heredoc, taking the first non-empty line as the subject', () => {
     const command = [
@@ -415,6 +445,25 @@ describe('extractCommitMessage', () => {
   it('handles a `--message=` flag', () => {
     const command = 'git commit --message="Update docs"';
     expect(extractCommitMessage(command)).toBe('Update docs');
+  });
+
+  it('falls back to "(commit message from file)" for -F/--file/-C/--reuse-message', () => {
+    expect(extractCommitMessage('git commit -F -')).toBe('(commit message from file)');
+    expect(extractCommitMessage('git commit --file=message.txt')).toBe('(commit message from file)');
+    expect(extractCommitMessage('git commit -C HEAD~1')).toBe('(commit message from file)');
+    expect(extractCommitMessage('git commit --reuse-message=HEAD~1')).toBe('(commit message from file)');
+  });
+
+  it('falls back to "(amend)" for --amend --no-edit with no -m', () => {
+    expect(extractCommitMessage('git commit --amend --no-edit')).toBe('(amend)');
+  });
+
+  it('prefers an explicit -m over --amend', () => {
+    expect(extractCommitMessage('git commit --amend -m "New subject"')).toBe('New subject');
+  });
+
+  it('returns an empty string when a real commit has no message and no known fallback flag', () => {
+    expect(extractCommitMessage('git commit')).toBe('');
   });
 });
 

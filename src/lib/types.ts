@@ -1,13 +1,4 @@
-/**
- * Shared type contract for Dailies supercuts.
- *
- * A "supercut" is the compact JSON artifact produced by the (future) local
- * CLI parser from a Claude Code transcript, published to Netlify Blobs, and
- * rendered by the (future) player at /s/<slug>.
- *
- * These types are the contract between the parser, the publish function,
- * and the player. Keep the names exactly as defined here across slices.
- */
+/** Serialized contract shared by the parser, API, and player. */
 
 export interface Supercut {
   version: 1;

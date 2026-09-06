@@ -1,6 +1,6 @@
 /**
  * Parses and validates the narration model's reply. Never throws — a
- * malformed or garbage reply just yields `undefined`, and the caller
+ * malformed or garbage reply just yields an empty result, and the caller
  * publishes without narration (see `netlify/functions/narrate-background.mts`).
  */
 
@@ -8,7 +8,9 @@ import type { Narration } from '../types';
 import { NARRATION_MODEL } from './model';
 
 const MAX_HIGHLIGHTS = 6;
+const MIN_EXPECTED_HIGHLIGHTS = 3;
 const MAX_TITLE_LEN = 80;
+const MAX_SYNOPSIS_WORDS = 60;
 
 /** Strips a ```json ... ``` or ``` ... ``` fence, if the whole reply is wrapped in one. */
 function stripCodeFences(text: string): string {
@@ -21,7 +23,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Shared JSON.parse + fence-strip step used by both exports below. */
+/** Shared JSON.parse + fence-strip step. */
 function parseJsonObject(text: string): Record<string, unknown> | undefined {
   let parsed: unknown;
   try {
@@ -32,27 +34,53 @@ function parseJsonObject(text: string): Record<string, unknown> | undefined {
   return isPlainObject(parsed) ? parsed : undefined;
 }
 
+/** Trims a synopsis over `MAX_SYNOPSIS_WORDS` words at a word boundary, appending "…". */
+function trimSynopsis(synopsis: string): string {
+  const words = synopsis.split(/\s+/).filter(Boolean);
+  if (words.length <= MAX_SYNOPSIS_WORDS) return synopsis;
+  return `${words.slice(0, MAX_SYNOPSIS_WORDS).join(' ')}…`;
+}
+
+export interface ParseNarrationResult {
+  /** Present only when the reply had a usable synopsis and at least one valid highlight. */
+  narration?: Narration;
+  /** The model's suggested title, applied by the caller to `Supercut.title`. */
+  title?: string;
+  /** Non-fatal issues worth logging — e.g. "only 2 highlights". Always present, possibly empty. */
+  warnings: string[];
+}
+
 /**
- * Validates the model's reply into a `Narration`. Requires a non-empty
- * `synopsis` and a `highlights` array; each highlight's `eventIndex` is
- * clamped to `[0, eventCount)` (out-of-range entries are dropped),
- * duplicate `eventIndex` values are deduped (first wins), and the result is
- * capped at `MAX_HIGHLIGHTS` entries. Returns `undefined` for anything that
- * doesn't parse as JSON, isn't an object, or is missing a usable synopsis.
+ * Parses the narration model's raw reply into a `Narration` and a suggested
+ * title in one pass.
+ *
+ * `narration` is set only when the reply parses as a JSON object with a
+ * non-empty `synopsis` and at least one highlight survives validation: each
+ * highlight's `eventIndex` must be an integer in `[0, eventCount)`, duplicate
+ * `eventIndex` values are deduped (first wins), and the list is capped at
+ * `MAX_HIGHLIGHTS`. An over-long synopsis is trimmed to `MAX_SYNOPSIS_WORDS`
+ * words at a word boundary rather than rejected.
+ *
+ * `title` is set independently — it's usable even when `narration` isn't —
+ * when the reply has a non-empty `title` no longer than `MAX_TITLE_LEN`.
  */
-export function parseNarrationResponse(text: string, eventCount: number): Narration | undefined {
+export function parseNarration(text: string, eventCount: number): ParseNarrationResult {
+  const warnings: string[] = [];
+
   const obj = parseJsonObject(text);
-  if (!obj) return undefined;
+  if (!obj) {
+    warnings.push('reply did not parse as a JSON object');
+    return { warnings };
+  }
 
-  const synopsis = typeof obj.synopsis === 'string' ? obj.synopsis.trim() : '';
-  if (!synopsis) return undefined;
+  const rawSynopsis = typeof obj.synopsis === 'string' ? obj.synopsis.trim() : '';
+  const synopsis = rawSynopsis ? trimSynopsis(rawSynopsis) : '';
 
-  if (!Array.isArray(obj.highlights)) return undefined;
-
+  const rawHighlights = Array.isArray(obj.highlights) ? obj.highlights : [];
   const seen = new Set<number>();
   const highlights: Narration['highlights'] = [];
 
-  for (const raw of obj.highlights) {
+  for (const raw of rawHighlights) {
     if (highlights.length >= MAX_HIGHLIGHTS) break;
     if (!isPlainObject(raw)) continue;
 
@@ -68,20 +96,23 @@ export function parseNarrationResponse(text: string, eventCount: number): Narrat
     highlights.push({ eventIndex, text: highlightText.trim() });
   }
 
-  return { synopsis, highlights, generatedBy: NARRATION_MODEL };
-}
+  const rawTitle = typeof obj.title === 'string' ? obj.title.trim() : '';
+  const title = rawTitle && rawTitle.length <= MAX_TITLE_LEN ? rawTitle : undefined;
+  if (rawTitle && rawTitle.length > MAX_TITLE_LEN) {
+    warnings.push(`title is ${rawTitle.length} characters, over the ${MAX_TITLE_LEN} cap — ignored`);
+  }
 
-/**
- * Pulls the model's suggested title out of the same reply, independently of
- * `parseNarrationResponse` — the caller applies it to `Supercut.title`
- * directly (it isn't part of the `Narration` type). Returns `undefined` if
- * the reply doesn't parse, or the title is missing, empty, or over 80 chars.
- */
-export function parseNarrationTitle(text: string): string | undefined {
-  const obj = parseJsonObject(text);
-  if (!obj) return undefined;
+  if (!synopsis) {
+    warnings.push('synopsis missing or empty');
+    return { title, warnings };
+  }
+  if (highlights.length === 0) {
+    warnings.push('no valid highlights survived filtering');
+    return { title, warnings };
+  }
+  if (highlights.length < MIN_EXPECTED_HIGHLIGHTS) {
+    warnings.push(`only ${highlights.length} highlight${highlights.length === 1 ? '' : 's'}`);
+  }
 
-  const title = typeof obj.title === 'string' ? obj.title.trim() : '';
-  if (!title || title.length > MAX_TITLE_LEN) return undefined;
-  return title;
+  return { narration: { synopsis, highlights, generatedBy: NARRATION_MODEL }, title, warnings };
 }

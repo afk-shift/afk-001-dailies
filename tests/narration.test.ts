@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildNarrationInput, buildNarrationPrompt, parseNarrationResponse, parseNarrationTitle } from '../src/lib/narration';
+import { buildNarrationInput, buildNarrationPrompt, parseNarration } from '../src/lib/narration';
 import type { Event, Supercut } from '../src/lib/types';
 
 function baseSupercut(events: Event[]): Supercut {
@@ -111,7 +111,7 @@ describe('buildNarrationPrompt', () => {
   });
 });
 
-describe('parseNarrationResponse', () => {
+describe('parseNarration', () => {
   const EVENT_COUNT = 10;
 
   it('accepts a response fenced in a ```json code block', () => {
@@ -120,22 +120,32 @@ describe('parseNarrationResponse', () => {
       JSON.stringify({
         title: 'Building Dailies',
         synopsis: 'Built the narration pipeline end to end.',
-        highlights: [{ eventIndex: 2, text: 'Wired up the AI Gateway call' }],
+        highlights: [
+          { eventIndex: 2, text: 'Wired up the AI Gateway call' },
+          { eventIndex: 3, text: 'Parsed the reply' },
+          { eventIndex: 4, text: 'Stored the narration' },
+        ],
       }),
       '```',
     ].join('\n');
 
-    const result = parseNarrationResponse(fenced, EVENT_COUNT);
-    expect(result).toBeDefined();
-    expect(result?.synopsis).toBe('Built the narration pipeline end to end.');
-    expect(result?.highlights).toEqual([{ eventIndex: 2, text: 'Wired up the AI Gateway call' }]);
-    expect(result?.generatedBy).toBe('claude-sonnet-5');
+    const result = parseNarration(fenced, EVENT_COUNT);
+    expect(result.narration?.synopsis).toBe('Built the narration pipeline end to end.');
+    expect(result.narration?.highlights).toHaveLength(3);
+    expect(result.narration?.generatedBy).toBe('claude-sonnet-5');
+    expect(result.title).toBe('Building Dailies');
+    expect(result.warnings).toEqual([]);
   });
 
   it('rejects garbage (not JSON, or missing required fields)', () => {
-    expect(parseNarrationResponse('not json at all', EVENT_COUNT)).toBeUndefined();
-    expect(parseNarrationResponse('{"title": "only a title"}', EVENT_COUNT)).toBeUndefined();
-    expect(parseNarrationResponse('{"synopsis": "ok", "highlights": "not an array"}', EVENT_COUNT)).toBeUndefined();
+    expect(parseNarration('not json at all', EVENT_COUNT).narration).toBeUndefined();
+    expect(parseNarration('{"title": "only a title"}', EVENT_COUNT).narration).toBeUndefined();
+    expect(parseNarration('{"synopsis": "ok", "highlights": "not an array"}', EVENT_COUNT).narration).toBeUndefined();
+  });
+
+  it('warns when the reply is not a JSON object', () => {
+    const result = parseNarration('not json at all', EVENT_COUNT);
+    expect(result.warnings).toEqual(['reply did not parse as a JSON object']);
   });
 
   it('drops highlights with an out-of-range or non-integer eventIndex', () => {
@@ -149,8 +159,8 @@ describe('parseNarrationResponse', () => {
       ],
     });
 
-    const result = parseNarrationResponse(response, EVENT_COUNT);
-    expect(result?.highlights).toEqual([{ eventIndex: 3, text: 'valid — in range' }]);
+    const result = parseNarration(response, EVENT_COUNT);
+    expect(result.narration?.highlights).toEqual([{ eventIndex: 3, text: 'valid — in range' }]);
   });
 
   it('dedupes repeated eventIndex values, keeping the first', () => {
@@ -161,28 +171,82 @@ describe('parseNarrationResponse', () => {
         { eventIndex: 1, text: 'second (duplicate index)' },
       ],
     });
-    const result = parseNarrationResponse(response, EVENT_COUNT);
-    expect(result?.highlights).toEqual([{ eventIndex: 1, text: 'first' }]);
+    const result = parseNarration(response, EVENT_COUNT);
+    expect(result.narration?.highlights).toEqual([{ eventIndex: 1, text: 'first' }]);
   });
 
-  it('caps highlights at 6 even when more are supplied', () => {
-    const highlights = Array.from({ length: 9 }, (_, idx) => ({ eventIndex: idx, text: `highlight ${idx}` }));
-    const response = JSON.stringify({ synopsis: 'A session summary.', highlights });
-
-    const result = parseNarrationResponse(response, EVENT_COUNT);
-    expect(result?.highlights).toHaveLength(6);
-  });
-});
-
-describe('parseNarrationTitle', () => {
-  it('returns the title when present and within the length cap', () => {
-    const response = JSON.stringify({ title: 'A short title', synopsis: 'x', highlights: [] });
-    expect(parseNarrationTitle(response)).toBe('A short title');
+  it('returns the title even when the narration itself is unusable', () => {
+    const response = JSON.stringify({ title: 'A short title', synopsis: '', highlights: [] });
+    const result = parseNarration(response, EVENT_COUNT);
+    expect(result.narration).toBeUndefined();
+    expect(result.title).toBe('A short title');
   });
 
-  it('returns undefined when the title is missing, empty, or over 80 characters', () => {
-    expect(parseNarrationTitle(JSON.stringify({ synopsis: 'x' }))).toBeUndefined();
-    expect(parseNarrationTitle(JSON.stringify({ title: '', synopsis: 'x' }))).toBeUndefined();
-    expect(parseNarrationTitle(JSON.stringify({ title: 'y'.repeat(81), synopsis: 'x' }))).toBeUndefined();
+  it('drops the title when missing, empty, or over 80 characters', () => {
+    expect(parseNarration(JSON.stringify({ synopsis: 'x', highlights: [] }), EVENT_COUNT).title).toBeUndefined();
+    expect(parseNarration(JSON.stringify({ title: '', synopsis: 'x', highlights: [] }), EVENT_COUNT).title).toBeUndefined();
+    const overlong = parseNarration(JSON.stringify({ title: 'y'.repeat(81), synopsis: 'x', highlights: [] }), EVENT_COUNT);
+    expect(overlong.title).toBeUndefined();
+    expect(overlong.warnings.some((w) => w.includes('over the 80 cap'))).toBe(true);
+  });
+
+  describe('synopsis word-count boundary', () => {
+    it('leaves exactly 60 words untouched', () => {
+      const synopsis = Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ');
+      const response = JSON.stringify({
+        synopsis,
+        highlights: [{ eventIndex: 0, text: 'x' }, { eventIndex: 1, text: 'y' }, { eventIndex: 2, text: 'z' }],
+      });
+      const result = parseNarration(response, EVENT_COUNT);
+      expect(result.narration?.synopsis).toBe(synopsis);
+    });
+
+    it('trims 61 words down to 60, appending "…"', () => {
+      const words = Array.from({ length: 61 }, (_, i) => `word${i}`);
+      const synopsis = words.join(' ');
+      const response = JSON.stringify({
+        synopsis,
+        highlights: [{ eventIndex: 0, text: 'x' }, { eventIndex: 1, text: 'y' }, { eventIndex: 2, text: 'z' }],
+      });
+      const result = parseNarration(response, EVENT_COUNT);
+      expect(result.narration?.synopsis).toBe(`${words.slice(0, 60).join(' ')}…`);
+    });
+  });
+
+  describe('highlight-count boundary', () => {
+    function responseWith(count: number): string {
+      const highlights = Array.from({ length: count }, (_, i) => ({ eventIndex: i, text: `highlight ${i}` }));
+      return JSON.stringify({ synopsis: 'A session summary.', highlights });
+    }
+
+    it('returns no narration when 0 highlights survive', () => {
+      const result = parseNarration(responseWith(0), EVENT_COUNT);
+      expect(result.narration).toBeUndefined();
+      expect(result.warnings).toContain('no valid highlights survived filtering');
+    });
+
+    it('accepts 1 highlight, with a warning', () => {
+      const result = parseNarration(responseWith(1), EVENT_COUNT);
+      expect(result.narration?.highlights).toHaveLength(1);
+      expect(result.warnings).toContain('only 1 highlight');
+    });
+
+    it('accepts 3 highlights with no highlight-count warning', () => {
+      const result = parseNarration(responseWith(3), EVENT_COUNT);
+      expect(result.narration?.highlights).toHaveLength(3);
+      expect(result.warnings).toEqual([]);
+    });
+
+    it('accepts 6 highlights (the cap) with no warning', () => {
+      const result = parseNarration(responseWith(6), EVENT_COUNT);
+      expect(result.narration?.highlights).toHaveLength(6);
+      expect(result.warnings).toEqual([]);
+    });
+
+    it('caps 7 supplied highlights at 6', () => {
+      const result = parseNarration(responseWith(7), EVENT_COUNT);
+      expect(result.narration?.highlights).toHaveLength(6);
+      expect(result.warnings).toEqual([]);
+    });
   });
 });

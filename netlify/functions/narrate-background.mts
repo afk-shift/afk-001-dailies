@@ -14,7 +14,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { Config } from '@netlify/functions';
-import { buildNarrationInput, buildNarrationPrompt, parseNarrationResponse, parseNarrationTitle } from '../../src/lib/narration';
+import { buildNarrationInput, buildNarrationPrompt, parseNarration } from '../../src/lib/narration';
 import { getSupercut, putSupercut } from '../../src/lib/store';
 import { checkAuthToken } from './_shared/auth';
 
@@ -73,17 +73,19 @@ export default async (req: Request): Promise<Response> => {
       .map((block) => block.text)
       .join('\n');
 
-    const narration = parseNarrationResponse(replyText, supercut.events.length);
+    const { narration, title, warnings } = parseNarration(replyText, supercut.events.length);
+    for (const warning of warnings) {
+      console.error(`[narrate] ${warning} (slug "${slug}")`);
+    }
+
     if (!narration) {
       console.error(`[narrate] could not parse a valid narration for slug "${slug}"`);
       return new Response(null, { status: 202 });
     }
 
     supercut.narration = narration;
-
-    const suggestedTitle = parseNarrationTitle(replyText);
-    if (suggestedTitle) {
-      supercut.title = suggestedTitle;
+    if (title) {
+      supercut.title = title;
     }
 
     await putSupercut(supercut);

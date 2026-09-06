@@ -1,28 +1,37 @@
 ---
 import Base from '../layouts/Base.astro';
-import { getFeaturedSlug } from '../lib/store';
+import { getFeaturedSlug, getSupercut } from '../lib/store';
 
-let featuredSlug = 'demo';
+const DEMO_SLUG = 'demo';
+
+// A distinct, real featured supercut — never the synthetic demo, which
+// already has its own link in the hero above.
+let featured: { slug: string; title: string } | null = null;
 try {
   const slug = await getFeaturedSlug();
-  if (slug) featuredSlug = slug;
+  if (slug && slug !== DEMO_SLUG) {
+    const supercut = await getSupercut(slug);
+    if (supercut) featured = { slug, title: supercut.title || supercut.sessionId };
+  }
 } catch (err) {
   // Blobs isn't available in every local dev setup — never 500 the
-  // homepage over it, just fall back to the demo supercut.
-  console.error('getFeaturedSlug() failed, falling back to demo:', err);
+  // homepage over it, just hide the Featured section.
+  console.error('Failed to load the featured supercut:', err);
 }
-const featuredHref = `/s/${featuredSlug}`;
+
+const CLI_SNIPPET = `git clone git@github.com:seancdavis/surprise-me.git dailies && cd dailies && npm install
+npm run dailies -- <sessionId>   # add --dry-run to preview first, nothing published`;
 
 const steps = [
   {
     n: '01',
-    title: 'Run the CLI on a session',
-    body: 'Point it at a Claude Code transcript on your machine. It parses the turns, tool calls, file edits, and commits into a compact timeline.',
+    title: 'Clone it and add your token',
+    body: 'git clone this repo, npm install, then copy .env.example to .env and paste in a DAILIES_PUBLISH_TOKEN (see the README).',
   },
   {
     n: '02',
-    title: 'It publishes a supercut',
-    body: 'The timeline is packaged into a small JSON supercut and pushed straight to this site — no accounts, no dashboards to configure.',
+    title: 'Run the CLI on a session',
+    body: 'npm run dailies -- <sessionId> parses a Claude Code transcript and publishes a supercut here. Add --dry-run first to preview it locally — nothing is sent over the network.',
   },
   {
     n: '03',
@@ -47,18 +56,16 @@ const steps = [
       commits made. Dailies turns the transcript into a tight, watchable
       replay you can send in one link.
     </p>
-    <div class="mt-8 flex flex-wrap items-center gap-4">
+    <div class="mt-8 flex flex-col items-start gap-4 sm:flex-row">
       <a
         href="/s/demo"
-        class="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 font-mono text-sm font-medium text-ink transition-colors hover:bg-accent-dim"
+        class="inline-flex shrink-0 items-center gap-2 rounded-md bg-accent px-5 py-2.5 font-mono text-sm font-medium text-ink transition-colors hover:bg-accent-dim"
       >
-        Watch the demo
+        Watch the synthetic demo
       </a>
-      <code
-        class="rounded-md border border-line bg-ink-raised px-4 py-2.5 font-mono text-sm text-muted"
-      >
-        npx dailies publish ./session.jsonl
-      </code>
+      <pre
+        class="w-full max-w-xl overflow-x-auto rounded-md border border-line bg-ink-raised px-4 py-3 font-mono text-xs leading-relaxed text-muted"
+      ><code>{CLI_SNIPPET}</code></pre>
     </div>
   </section>
 
@@ -85,25 +92,25 @@ const steps = [
     </div>
   </section>
 
-  <section class="mx-auto max-w-5xl px-6 py-16">
-    <h2 class="font-mono text-xs tracking-widest text-muted uppercase">
-      Featured
-    </h2>
-    <a
-      href={featuredHref}
-      class="mt-6 flex items-center justify-between gap-6 rounded-lg border border-line bg-ink-raised px-6 py-5 transition-colors hover:border-accent/60"
-    >
-      <div>
-        <p class="font-mono text-xs text-accent">{featuredHref}</p>
-        <p class="mt-1 text-base font-medium text-paper">
-          A first look at a Dailies supercut
-        </p>
-        <p class="mt-1 text-sm text-muted">
-          The replay format is coming in a later build — this slot is
-          reserved for it.
-        </p>
-      </div>
-      <span class="font-mono text-sm text-muted">&rarr;</span>
-    </a>
-  </section>
+  {
+    featured && (
+      <section class="mx-auto max-w-5xl px-6 py-16">
+        <h2 class="font-mono text-xs tracking-widest text-muted uppercase">
+          Featured
+        </h2>
+        <a
+          href={`/s/${featured.slug}`}
+          class="mt-6 flex items-center justify-between gap-6 rounded-lg border border-line bg-ink-raised px-6 py-5 transition-colors hover:border-accent/60"
+        >
+          <div>
+            <p class="font-mono text-xs text-accent">/s/{featured.slug}</p>
+            <p class="mt-1 text-base font-medium text-paper">
+              {featured.title}
+            </p>
+          </div>
+          <span class="font-mono text-sm text-muted">&rarr;</span>
+        </a>
+      </section>
+    )
+  }
 </Base>

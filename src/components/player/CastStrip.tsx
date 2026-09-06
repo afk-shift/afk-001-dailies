@@ -1,7 +1,7 @@
 /**
- * Who was in the room. Claude Code never tells you which model ran which
- * subagent, so the model badge is the point of this strip — and its hue is
- * reused on every tool pill that actor is responsible for.
+ * Who was in the room. Each cast member's hue comes from its model family,
+ * and that same hue is reused on every tool pill that actor is responsible
+ * for.
  */
 
 import type { CastMember } from '../../lib/types';
@@ -47,14 +47,10 @@ function CastChip({ member }: { member: CastMember }) {
 export function CastStrip({ cast }: { cast: CastMember[] }) {
   if (cast.length === 0) return null;
 
-  // The orchestrator leads regardless of the order it arrived in.
-  const ordered = [...cast].sort((a, b) =>
-    a.kind === b.kind ? 0 : a.kind === 'orchestrator' ? -1 : 1,
-  );
-
+  // `cast` already arrives orchestrator-first, spawn-ordered from the parser.
   return (
     <ul className="mt-4 flex flex-wrap gap-2">
-      {ordered.map((member) => (
+      {cast.map((member) => (
         <li key={member.id}>
           <CastChip member={member} />
         </li>

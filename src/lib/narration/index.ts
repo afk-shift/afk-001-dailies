@@ -9,4 +9,5 @@ export { buildNarrationInput } from './input';
 export type { NarrationEventLine, NarrationInput } from './input';
 export { buildNarrationPrompt } from './prompt';
 export { NARRATION_MODEL } from './model';
-export { parseNarrationResponse, parseNarrationTitle } from './parse';
+export { parseNarration } from './parse';
+export type { ParseNarrationResult } from './parse';
