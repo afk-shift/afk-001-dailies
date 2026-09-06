@@ -37,12 +37,59 @@ export function isGitCommitCommand(command: string): boolean {
   return /\bgit commit\b/.test(command);
 }
 
-/** Extracts the first line of the `-m` message from a `git commit` command. */
-export function extractCommitMessage(command: string): string {
+/**
+ * A real transcript often commits with a bash heredoc so the message can span
+ * multiple lines:
+ *
+ *   git commit -m "$(cat <<'EOF'
+ *   Subject line
+ *
+ *   Body…
+ *   EOF
+ *   )"
+ *
+ * The naive `-m "..."` capture grabs that whole blob, whose first line is
+ * just the heredoc opener (`$(cat <<'EOF'`) — not a usable message.
+ */
+function isHeredocOpener(value: string): boolean {
+  return /^\$\(cat <<-?'?EOF'?\s*$/.test(value.trimStart().split(/\r?\n/)[0] ?? '');
+}
+
+/** First non-empty line after the heredoc opener line — the real subject. */
+function firstLineAfterHeredocOpener(value: string): string {
+  const lines = value.split(/\r?\n/);
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (line.trim().length > 0) return line;
+  }
+  return '';
+}
+
+/** Extracts the raw value of the first `-m`/`--message` flag on a command line. */
+function extractRawMessageValue(command: string): string | null {
+  const equals = command.match(/--message=(?:"([^"]*)"|'([^']*)'|(\S+))/);
+  if (equals) return equals[1] ?? equals[2] ?? equals[3] ?? '';
+
   const match =
-    command.match(/-m\s+"([^"]*)"/) || command.match(/-m\s+'([^']*)'/) || command.match(/-m\s+(\S+)/);
-  const message = match?.[1] ?? '';
-  return message.split('\n')[0] ?? '';
+    command.match(/(?:-m|--message)\s+"([^"]*)"/) ||
+    command.match(/(?:-m|--message)\s+'([^']*)'/) ||
+    command.match(/(?:-m|--message)\s+(\S+)/);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Extracts the commit message from a `git commit` command — the first
+ * `-m`/`--message` flag (later ones, e.g. a `-m subject -m body` pair, are
+ * ignored — only the first is taken), unwrapping a heredoc-style value if
+ * present.
+ */
+export function extractCommitMessage(command: string): string {
+  const raw = extractRawMessageValue(command);
+  if (!raw) return '';
+
+  if (isHeredocOpener(raw)) return firstLineAfterHeredocOpener(raw);
+
+  return raw.split(/\r?\n/)[0] ?? '';
 }
 
 /** Builds the short human label shown on a ToolEvent, per tool kind. */

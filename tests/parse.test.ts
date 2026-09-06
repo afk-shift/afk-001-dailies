@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseJsonl, parseSession, type SessionInput } from '../src/lib/parse';
 import { cleanPromptText } from '../src/lib/parse/clean';
+import { extractCommitMessage } from '../src/lib/parse/labels';
 import { redactSecrets } from '../src/lib/parse/redact';
 import type { CommitEvent, MilestoneEvent, PromptEvent, SpawnEvent, ToolEvent } from '../src/lib/types';
 
@@ -385,6 +386,35 @@ describe('redactSecrets', () => {
 
   it('leaves ordinary text untouched', () => {
     expect(redactSecrets('nothing sensitive here')).toBe('nothing sensitive here');
+  });
+});
+
+describe('extractCommitMessage', () => {
+  it('unwraps a `$(cat <<\'EOF\' ... EOF)` heredoc, taking the first non-empty line as the subject', () => {
+    const command = [
+      'git commit -m "$(cat <<\'EOF\'',
+      'Add helper function',
+      '',
+      'Body text explaining why.',
+      "EOF",
+      ')"',
+    ].join('\n');
+    expect(extractCommitMessage(command)).toBe('Add helper function');
+  });
+
+  it('unwraps a `$(cat <<EOF ... EOF)` heredoc (unquoted delimiter)', () => {
+    const command = ['git commit -m "$(cat <<EOF', 'Fix the flaky test', 'EOF', ')"'].join('\n');
+    expect(extractCommitMessage(command)).toBe('Fix the flaky test');
+  });
+
+  it('takes the first -m when given `-m "subject" -m "body"`', () => {
+    const command = 'git commit -m "Add feature" -m "Longer body here"';
+    expect(extractCommitMessage(command)).toBe('Add feature');
+  });
+
+  it('handles a `--message=` flag', () => {
+    const command = 'git commit --message="Update docs"';
+    expect(extractCommitMessage(command)).toBe('Update docs');
   });
 });
 

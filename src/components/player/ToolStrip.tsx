@@ -5,6 +5,7 @@
  * catches a red ring or a change of actor hue.
  */
 
+import { useState } from 'react';
 import type { ToolEvent } from '../../lib/types';
 import { ToolGlyph } from './glyphs';
 import { hueFor } from './model-colors';
@@ -13,6 +14,9 @@ import { hueFor } from './model-colors';
 const COLLAPSE_AT = 24;
 /** How many survive the truncation. */
 const KEEP = 20;
+
+const FOCUS =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ink';
 
 interface ToolStripProps {
   events: ToolEvent[];
@@ -39,9 +43,10 @@ function ToolPill({ event, hue }: { event: ToolEvent; hue: string }) {
 }
 
 export function ToolStrip({ events, hues }: ToolStripProps) {
+  const [expanded, setExpanded] = useState(false);
   const truncated = events.length > COLLAPSE_AT;
-  const shown = truncated ? events.slice(0, KEEP) : events;
-  const remaining = events.length - shown.length;
+  const shown = truncated && !expanded ? events.slice(0, KEEP) : events;
+  const remaining = events.length - KEEP;
 
   return (
     <div className="reel-enter-fade flex flex-wrap items-center gap-1.5">
@@ -52,10 +57,23 @@ export function ToolStrip({ events, hues }: ToolStripProps) {
           hue={hueFor(hues, event.actor)}
         />
       ))}
-      {remaining > 0 && (
-        <span className="px-1 font-mono text-[11px] text-muted/70 tabular-nums">
+      {truncated && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className={`rounded-sm px-1 font-mono text-[11px] text-muted/70 tabular-nums underline decoration-dotted underline-offset-2 hover:text-muted ${FOCUS}`}
+        >
           +{remaining} more
-        </span>
+        </button>
+      )}
+      {truncated && expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className={`rounded-sm px-1 font-mono text-[11px] text-muted/70 tabular-nums underline decoration-dotted underline-offset-2 hover:text-muted ${FOCUS}`}
+        >
+          collapse
+        </button>
       )}
     </div>
   );

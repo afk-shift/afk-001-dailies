@@ -47,20 +47,44 @@ function clamp(value: number, max: number): number {
   return Math.min(Math.max(Math.round(value), 0), max);
 }
 
-/** Rewrites `?at=` in place as the position changes, at most every 400ms. */
-function useDeepLink(index: number): void {
+/**
+ * Rewrites `?at=` in place as the position changes, at most every 400ms.
+ *
+ * Stays hands-off until `index` actually diverges from `initialIndex` — a
+ * fresh page load must not stamp `?at=0` onto a clean URL just because
+ * playback starts at position 0. Once it has diverged (the reel has moved),
+ * every subsequent position gets written, including a trip back down to 0 —
+ * except that if the URL had no `at` param to begin with, returning to 0
+ * removes the param again rather than leaving a stray `?at=0` behind.
+ */
+function useDeepLink(index: number, initialIndex: number): void {
   const pending = useRef<number | null>(null);
   const lastWrite = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dirtied = useRef(false);
+  const hadAtParam = useRef<boolean | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    if (hadAtParam.current === null) {
+      hadAtParam.current = new URL(window.location.href).searchParams.has('at');
+    }
+
+    if (!dirtied.current) {
+      if (index === initialIndex) return;
+      dirtied.current = true;
+    }
 
     const write = (value: number) => {
       lastWrite.current = Date.now();
       pending.current = null;
       const url = new URL(window.location.href);
-      url.searchParams.set('at', String(value));
+      if (value === 0 && !hadAtParam.current) {
+        url.searchParams.delete('at');
+      } else {
+        url.searchParams.set('at', String(value));
+      }
       window.history.replaceState(window.history.state, '', url);
     };
 
@@ -76,7 +100,7 @@ function useDeepLink(index: number): void {
       timer.current = null;
       if (pending.current !== null) write(pending.current);
     }, URL_THROTTLE_MS - elapsed);
-  }, [index]);
+  }, [index, initialIndex]);
 
   useEffect(() => {
     return () => {
@@ -93,7 +117,11 @@ export function usePlayback(events: Event[], initialIndex = 0): Playback {
   const [animating, setAnimating] = useState(false);
   const speed = SPEEDS[speedIdx] ?? 1;
 
-  useDeepLink(index);
+  // Captured once — the position playback actually started from — so the
+  // deep-link writer can tell "still at the start" apart from "moved, then
+  // came back".
+  const startIndex = useRef(index).current;
+  useDeepLink(index, startIndex);
 
   // The cadence loop. One timeout per event: the event at `index` holds the
   // screen for its dwell time, then the next one arrives.
