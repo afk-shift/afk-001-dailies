@@ -1,12 +1,15 @@
 /**
  * The loudest object on the page, because this is a player. The track is
- * indexed by event, not by time — a tick marks where each chapter opens —
- * while the left-hand clock keeps reporting the session's real elapsed time.
+ * indexed by event, not by time — a tick marks where each chapter opens and a
+ * diamond marks each narration highlight — while the left-hand clock keeps
+ * reporting the session's real elapsed time.
  */
 
 import type { Chapter, Event } from '../../lib/types';
 import { formatClock, padIndex } from './format';
 import { PauseGlyph, PlayGlyph } from './glyphs';
+import { HighlightMarkers } from './HighlightMarkers';
+import type { HighlightWindow, PlaybackMode } from './usePlayback';
 
 interface TransportProps {
   index: number;
@@ -15,9 +18,13 @@ interface TransportProps {
   speed: number;
   chapters: Chapter[];
   current: Event | undefined;
+  mode: PlaybackMode;
+  hasSupercut: boolean;
+  highlights: HighlightWindow[];
   onToggle: () => void;
   onSeek: (index: number) => void;
   onCycleSpeed: () => void;
+  onToggleMode: () => void;
 }
 
 const FOCUS =
@@ -30,16 +37,21 @@ export function Transport({
   speed,
   chapters,
   current,
+  mode,
+  hasSupercut,
+  highlights,
   onToggle,
   onSeek,
   onCycleSpeed,
+  onToggleMode,
 }: TransportProps) {
+  const cutting = mode === 'supercut';
   const percent = (value: number) =>
     lastIndex > 0 ? `${(value / lastIndex) * 100}%` : '0%';
 
   return (
-    <div className="sticky top-0 z-20 border-y border-line bg-ink/90 px-4 py-3 backdrop-blur">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+    <div className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
         <button
           type="button"
           onClick={onToggle}
@@ -49,6 +61,26 @@ export function Transport({
         >
           {playing ? <PauseGlyph /> : <PlayGlyph />}
         </button>
+
+        {hasSupercut && (
+          <button
+            type="button"
+            onClick={onToggleMode}
+            aria-label={cutting ? 'Exit supercut' : 'Play supercut'}
+            aria-pressed={cutting}
+            className={`flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 font-mono text-xs transition-colors ${FOCUS} ${
+              cutting
+                ? 'border-accent bg-accent/15 text-accent'
+                : 'border-line text-paper hover:border-accent/60'
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className="h-2 w-2 rotate-45 bg-accent"
+            />
+            supercut
+          </button>
+        )}
 
         <button
           type="button"
@@ -84,8 +116,14 @@ export function Transport({
               />
             ))}
             <span
-              className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink bg-accent"
+              className="absolute top-1/2 z-30 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink bg-accent"
               style={{ left: percent(index) }}
+            />
+            <HighlightMarkers
+              highlights={highlights}
+              lastIndex={lastIndex}
+              activeIndex={index}
+              onSeek={onSeek}
             />
           </div>
         </div>
@@ -102,6 +140,7 @@ export function Transport({
 
       <p className="mt-2 hidden font-mono text-[10px] text-muted/70 lg:block">
         space plays · arrows step one event · brackets jump a chapter
+        {hasSupercut && ' · s cuts to the highlights'}
       </p>
     </div>
   );

@@ -4,19 +4,23 @@
  * Everything below is a view of a single piece of state: the event index.
  * `usePlayback` owns it; the transport, the chapter rail, the reel, and the
  * side panel all read from it and seek it.
+ *
+ * From `lg` up the player owns the viewport: slate band on top, transport
+ * welded to the bottom edge, and the reel the only thing that scrolls. Below
+ * that it is an ordinary document.
  */
 
 import { useCallback, useEffect, useMemo } from 'react';
 import type { Supercut } from '../../lib/types';
-import { CastStrip } from './CastStrip';
 import { ChapterRail, currentChapterIndex } from './ChapterRail';
 import { EndCard } from './EndCard';
-import { Header } from './Header';
+import { HighlightCaption } from './HighlightCaption';
 import { buildHueMap } from './model-colors';
 import { Reel } from './Reel';
 import { SidePanel, type RevealedFile } from './SidePanel';
+import { SlateBand } from './SlateBand';
 import { Transport } from './Transport';
-import { usePlayback } from './usePlayback';
+import { usePlayback, type PlaybackMode } from './usePlayback';
 import { useReducedMotion } from './useReducedMotion';
 
 /** Tools whose label is the path they wrote to — how files get revealed. */
@@ -26,12 +30,23 @@ interface PlayerProps {
   supercut: Supercut;
   /** Starting position, from `?at=` on the server. Always starts paused. */
   initialIndex?: number;
+  /** Starting cut, from `?cut=` on the server. */
+  initialMode?: PlaybackMode;
 }
 
-export function Player({ supercut, initialIndex = 0 }: PlayerProps) {
+export function Player({
+  supercut,
+  initialIndex = 0,
+  initialMode = 'linear',
+}: PlayerProps) {
   const { events, chapters } = supercut;
-  const playback = usePlayback(events, initialIndex);
-  const { index, lastIndex, seek, step, toggle } = playback;
+  const playback = usePlayback(
+    events,
+    supercut.narration?.highlights,
+    initialIndex,
+    initialMode,
+  );
+  const { index, lastIndex, seek, step, toggle, toggleMode } = playback;
   const reducedMotion = useReducedMotion();
 
   const hues = useMemo(() => buildHueMap(supercut.cast), [supercut.cast]);
@@ -100,6 +115,11 @@ export function Player({ supercut, initialIndex = 0 }: PlayerProps) {
         tag === 'TEXTAREA' ||
         tag === 'SELECT' ||
         target?.isContentEditable === true;
+      const typing =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable === true;
 
       switch (event.key) {
         case ' ':
@@ -128,6 +148,12 @@ export function Player({ supercut, initialIndex = 0 }: PlayerProps) {
           event.preventDefault();
           jumpChapter(1);
           break;
+        case 's':
+        case 'S':
+          if (typing) return;
+          event.preventDefault();
+          toggleMode();
+          break;
         default:
           break;
       }
@@ -135,30 +161,18 @@ export function Player({ supercut, initialIndex = 0 }: PlayerProps) {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [toggle, step, jumpChapter]);
+  }, [toggle, step, jumpChapter, toggleMode]);
 
   const atEnd = events.length > 0 && index >= lastIndex;
 
   return (
-    <div id="supercut-player" className="mx-auto w-full max-w-7xl px-4 sm:px-6">
-      <div className="pt-10 pb-6">
-        <Header supercut={supercut} />
-        <CastStrip cast={supercut.cast} />
-      </div>
+    <div
+      id="supercut-player"
+      className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden"
+    >
+      <SlateBand supercut={supercut} />
 
-      <Transport
-        index={index}
-        lastIndex={lastIndex}
-        playing={playback.playing}
-        speed={playback.speed}
-        chapters={chapters}
-        current={events[index]}
-        onToggle={toggle}
-        onSeek={seek}
-        onCycleSpeed={playback.cycleSpeed}
-      />
-
-      <div className="grid gap-x-8 gap-y-6 pt-4 pb-16 md:grid-cols-[13rem_minmax(0,1fr)] lg:grid-cols-[13rem_minmax(0,1fr)_17rem]">
+      <div className="mx-auto grid w-full max-w-7xl gap-x-8 gap-y-6 px-4 py-4 sm:px-6 md:grid-cols-[13rem_minmax(0,1fr)] lg:min-h-0 lg:flex-1 lg:grid-cols-[13rem_minmax(0,1fr)_17rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-y-0 lg:py-0">
         <ChapterRail chapters={chapters} index={index} onSeek={seek} />
 
         <Reel
@@ -167,6 +181,7 @@ export function Player({ supercut, initialIndex = 0 }: PlayerProps) {
           index={index}
           playing={playback.playing}
           animating={playback.animating}
+          dissolving={playback.dissolving}
           reducedMotion={reducedMotion}
           hues={hues}
           endCard={
@@ -176,7 +191,7 @@ export function Player({ supercut, initialIndex = 0 }: PlayerProps) {
           }
         />
 
-        <div className="md:col-span-2 lg:col-span-1">
+        <div className="md:col-span-2 lg:col-span-1 lg:min-h-0">
           <SidePanel
             supercut={supercut}
             index={index}
@@ -186,6 +201,28 @@ export function Player({ supercut, initialIndex = 0 }: PlayerProps) {
             onSeek={seek}
           />
         </div>
+      </div>
+
+      <div className="sticky bottom-0 z-20 shrink-0 border-t border-line bg-ink/90 backdrop-blur">
+        <HighlightCaption
+          active={playback.activeHighlight}
+          next={playback.nextHighlight}
+        />
+        <Transport
+          index={index}
+          lastIndex={lastIndex}
+          playing={playback.playing}
+          speed={playback.speed}
+          chapters={chapters}
+          current={events[index]}
+          mode={playback.mode}
+          hasSupercut={playback.hasSupercut}
+          highlights={playback.highlights}
+          onToggle={toggle}
+          onSeek={seek}
+          onCycleSpeed={playback.cycleSpeed}
+          onToggleMode={toggleMode}
+        />
       </div>
     </div>
   );

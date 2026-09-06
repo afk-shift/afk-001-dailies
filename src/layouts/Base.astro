@@ -8,6 +8,12 @@ interface Props {
   ogTitle?: string;
   /** Widens the header and footer to match a full-width page like the player. */
   wide?: boolean;
+  /**
+   * `slim` hands the viewport to the page from `lg` up: a shorter site header,
+   * no footer, and a shell that never scrolls. The page is then responsible
+   * for filling that height.
+   */
+  chrome?: 'default' | 'slim';
 }
 
 const {
@@ -15,13 +21,15 @@ const {
   description = 'Supercuts of your Claude Code sessions.',
   ogTitle,
   wide = false,
+  chrome = 'default',
 } = Astro.props;
 
 const pageTitle = title === 'Dailies' ? title : `${title} — Dailies`;
 const socialTitle = ogTitle ?? pageTitle;
-const chrome = wide
+const gutter = wide
   ? 'mx-auto max-w-7xl px-4 sm:px-6'
   : 'mx-auto max-w-5xl px-6';
+const slim = chrome === 'slim';
 ---
 
 <!doctype html>
@@ -44,15 +52,44 @@ const chrome = wide
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    {
+      slim && (
+        <script is:inline>
+          try {
+            if (localStorage.getItem('dailies:slate') === 'collapsed') {
+              document.documentElement.dataset.slate = 'collapsed';
+            }
+          } catch (error) {
+            /* Storage is a nicety here. */
+          }
+        </script>
+      )
+    }
   </head>
-  <body class="min-h-screen bg-ink font-sans antialiased">
+  <body
+    class:list={[
+      'min-h-screen bg-ink font-sans antialiased',
+      slim && 'lg:h-dvh lg:min-h-0 lg:overflow-hidden',
+    ]}
+  >
     <div
       class="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(255,138,61,0.12),transparent)]"
     >
     </div>
-    <div class="relative flex min-h-screen flex-col">
+    <div
+      class:list={[
+        'relative flex min-h-screen flex-col',
+        slim && 'lg:h-full lg:min-h-0 lg:overflow-hidden',
+      ]}
+    >
       <header class="border-b border-line/60">
-        <div class:list={[chrome, 'flex items-center justify-between py-5']}>
+        <div
+          class:list={[
+            gutter,
+            'flex items-center justify-between',
+            slim ? 'py-3' : 'py-5',
+          ]}
+        >
           <a
             href="/"
             class="font-mono text-sm font-semibold tracking-tight text-paper"
@@ -66,11 +103,16 @@ const chrome = wide
           </nav>
         </div>
       </header>
-      <main class="relative flex-1">
+      <main
+        class:list={[
+          'relative flex-1',
+          slim && 'lg:flex lg:min-h-0 lg:flex-col',
+        ]}
+      >
         <slot />
       </main>
-      <footer class="border-t border-line/60">
-        <div class:list={[chrome, 'py-6 font-mono text-xs text-muted']}>
+      <footer class:list={['border-t border-line/60', slim && 'lg:hidden']}>
+        <div class:list={[gutter, 'py-6 font-mono text-xs text-muted']}>
           built with claude code
         </div>
       </footer>

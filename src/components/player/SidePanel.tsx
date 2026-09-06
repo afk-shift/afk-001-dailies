@@ -78,7 +78,7 @@ export function SidePanel({
   const highlights = narration?.highlights ?? [];
 
   return (
-    <aside className="space-y-6 lg:sticky lg:top-28">
+    <aside className="thin-scroll space-y-6 pb-28 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pt-4 lg:pb-10">
       <section>
         <SectionLabel>So far</SectionLabel>
         <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-md border border-line bg-line">

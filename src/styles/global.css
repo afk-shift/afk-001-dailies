@@ -47,6 +47,37 @@
 }
 
 /*
+ * The slate band folds from `<html data-slate>` rather than from React state,
+ * so the layout's inline script can apply the remembered choice before the
+ * first paint without the island hydrating against different markup.
+ */
+[data-slate='collapsed'] .slate-details {
+  display: none;
+}
+
+.slate-closed {
+  display: none;
+}
+
+[data-slate='collapsed'] .slate-closed {
+  display: inline;
+}
+
+[data-slate='collapsed'] .slate-open {
+  display: none;
+}
+
+[data-slate='collapsed'] .slate-chevron {
+  transform: rotate(225deg);
+}
+
+/* Side columns scroll only when they have to, and quietly when they do. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+
+/*
  * Player motion. Entrances only fire while the reel is advancing under its
  * own power (`.reel-animate`) — scrubbing and stepping mount the same nodes
  * without the cascade.
@@ -121,12 +152,44 @@
   animation: caret-blink 900ms steps(1) infinite;
 }
 
+/* The cut between two highlights: the picture drops away, the caption speaks. */
+.reel {
+  transition: opacity 160ms ease-out;
+}
+
+.reel-dissolve {
+  opacity: 0.08;
+}
+
+@keyframes caption-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.caption-in {
+  animation: caption-in 220ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reel-animate li:last-child .reel-enter,
   .reel-animate li:last-child .reel-enter-fade,
   .reel-animate li:last-child .reel-enter-spawn,
   .reel-animate > .reel-enter,
+  .caption-in,
   .caret {
     animation: none;
+  }
+
+  /* The caption alone carries the cut when motion is unwelcome. */
+  .reel {
+    transition: none;
+  }
+
+  .reel-dissolve {
+    opacity: 1;
   }
 }

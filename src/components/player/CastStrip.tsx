@@ -49,7 +49,7 @@ export function CastStrip({ cast }: { cast: CastMember[] }) {
 
   // `cast` already arrives orchestrator-first, spawn-ordered from the parser.
   return (
-    <ul className="mt-4 flex flex-wrap gap-2">
+    <ul className="flex flex-wrap gap-2">
       {cast.map((member) => (
         <li key={member.id}>
           <CastChip member={member} />

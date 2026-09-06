@@ -68,7 +68,10 @@ export function ChapterRail(props: ChapterRailProps) {
   const activeTitle = chapters[active]?.title ?? 'Opening';
 
   return (
-    <nav aria-label="Chapters">
+    <nav
+      aria-label="Chapters"
+      className="lg:flex lg:h-full lg:min-h-0 lg:flex-col"
+    >
       {/* Mobile: a strip that stays out of the way until you want it. */}
       <details className="group md:hidden">
         <summary
@@ -90,7 +93,7 @@ export function ChapterRail(props: ChapterRailProps) {
         </div>
       </details>
 
-      <div className="hidden md:sticky md:top-28 md:block">
+      <div className="thin-scroll hidden md:sticky md:top-6 md:block lg:static lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:py-4">
         <ChapterList {...props} />
       </div>
     </nav>

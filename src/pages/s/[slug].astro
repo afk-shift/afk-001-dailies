@@ -1,4 +1,5 @@
 ---
+import { withDevNarration } from '../../components/player/dev-narration';
 import { formatDuration } from '../../components/player/format';
 import { Player } from '../../components/player/Player';
 import Base from '../../layouts/Base.astro';
@@ -6,15 +7,20 @@ import { resolveSupercut } from '../../lib/get-supercut';
 
 const { slug } = Astro.params;
 
-const supercut = slug ? await resolveSupercut(slug) : null;
+const resolved = slug ? await resolveSupercut(slug) : null;
+
+// The demo fixture ships without narration, so development gets a stand-in to
+// drive supercut mode against.
+const supercut =
+  import.meta.env.DEV && resolved ? withDevNarration(resolved) : resolved;
 
 if (!supercut) {
   Astro.response.status = 404;
 }
 
-// `?at=<index>` deep links straight to a position in the reel. Resolving it
-// on the server keeps the island's first paint identical to its hydrated
-// state.
+// `?at=<index>` deep links straight to a position in the reel, and `?cut=1`
+// opens it in supercut mode. Resolving both on the server keeps the island's
+// first paint identical to its hydrated state.
 const requested = Number(Astro.url.searchParams.get('at'));
 const initialIndex =
   supercut && Number.isFinite(requested)
@@ -23,6 +29,9 @@ const initialIndex =
         Math.max(0, supercut.events.length - 1)
       )
     : 0;
+
+const initialMode =
+  Astro.url.searchParams.get('cut') === '1' ? 'supercut' : 'linear';
 
 const count = (value: number, noun: string) =>
   `${value} ${value === 1 ? noun : `${noun}s`}`;
@@ -56,8 +65,19 @@ const description = supercut
       </section>
     </Base>
   ) : (
-    <Base title={title} description={description} ogTitle={title} wide>
-      <Player supercut={supercut} initialIndex={initialIndex} client:load />
+    <Base
+      title={title}
+      description={description}
+      ogTitle={title}
+      wide
+      chrome="slim"
+    >
+      <Player
+        supercut={supercut}
+        initialIndex={initialIndex}
+        initialMode={initialMode}
+        client:load
+      />
     </Base>
   )
 }

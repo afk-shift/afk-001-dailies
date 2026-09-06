@@ -3,9 +3,11 @@
  * at the top. It follows the playhead on its own, but the moment you scroll
  * back to read something it lets go — and picks the thread up again when you
  * press play.
+ *
+ * On the theatre layout this is the only thing on the page that scrolls.
  */
 
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import type { Chapter, Event, ToolEvent } from '../../lib/types';
 import {
   CommitLine,
@@ -17,9 +19,7 @@ import {
 } from './EventCards';
 import { hueFor } from './model-colors';
 import { ToolStrip } from './ToolStrip';
-
-/** How close to the bottom still counts as "following the playhead". */
-const STICK_THRESHOLD_PX = 56;
+import { useFollowPlayhead } from './useFollowPlayhead';
 
 type ReelItem =
   | { type: 'tools'; key: number; dtMs: number; events: ToolEvent[]; endsAt: number }
@@ -60,6 +60,7 @@ interface ReelProps {
   index: number;
   playing: boolean;
   animating: boolean;
+  dissolving: boolean;
   reducedMotion: boolean;
   hues: Map<string, string>;
   endCard: ReactNode;
@@ -71,12 +72,12 @@ export function Reel({
   index,
   playing,
   animating,
+  dissolving,
   reducedMotion,
   hues,
   endCard,
 }: ReelProps) {
   const scroller = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
 
   const items = useMemo(() => buildItems(events, index), [events, index]);
 
@@ -86,24 +87,7 @@ export function Reel({
     return map;
   }, [chapters]);
 
-  // Pressing play re-attaches the view to the playhead.
-  useEffect(() => {
-    if (playing) following.current = true;
-  }, [playing]);
-
-  useEffect(() => {
-    const element = scroller.current;
-    if (!element || !following.current) return;
-    element.scrollTop = element.scrollHeight;
-  }, [index, items.length]);
-
-  const onScroll = () => {
-    const element = scroller.current;
-    if (!element) return;
-    const distance =
-      element.scrollHeight - element.scrollTop - element.clientHeight;
-    following.current = distance <= STICK_THRESHOLD_PX;
-  };
+  const onScroll = useFollowPlayhead(scroller, index, items.length, playing);
 
   return (
     <div
@@ -112,9 +96,9 @@ export function Reel({
       aria-live="polite"
       aria-relevant="additions text"
       aria-label="Session reel"
-      className={`h-[min(62vh,40rem)] min-h-[20rem] overflow-y-auto overscroll-contain pt-3 pr-1 ${
+      className={`reel thin-scroll pt-3 pr-1 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-10 ${
         animating ? 'reel-animate' : ''
-      }`}
+      } ${dissolving ? 'reel-dissolve' : ''}`}
     >
       {items.length === 0 && (
         <p className="pl-[4.5rem] font-mono text-xs text-muted">
