@@ -5,7 +5,7 @@
  * Dailies site via `POST /api/publish`.
  *
  * Usage:
- *   npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--site https://...]
+ *   npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--site https://...] [--no-narrate]
  */
 
 import * as fs from 'node:fs';
@@ -23,15 +23,16 @@ interface CliArgs {
   title?: string;
   feature: boolean;
   site?: string;
+  noNarrate: boolean;
 }
 
 function usage(): string {
-  return 'Usage: npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--site https://...]';
+  return 'Usage: npm run dailies -- <sessionId|path/to/session.jsonl> [--dry-run] [--title "..."] [--feature] [--site https://...] [--no-narrate]';
 }
 
 function parseArgs(argv: string[]): CliArgs {
   const positional: string[] = [];
-  const args: CliArgs = { input: '', dryRun: false, feature: false };
+  const args: CliArgs = { input: '', dryRun: false, feature: false, noNarrate: false };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -39,6 +40,8 @@ function parseArgs(argv: string[]): CliArgs {
       args.dryRun = true;
     } else if (arg === '--feature') {
       args.feature = true;
+    } else if (arg === '--no-narrate') {
+      args.noNarrate = true;
     } else if (arg === '--title') {
       args.title = argv[++i];
     } else if (arg === '--site') {
@@ -251,13 +254,17 @@ async function main(): Promise<void> {
 
   const site = (args.site || process.env.DAILIES_SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, '');
 
-  const publishRes = await postJson(`${site}/api/publish`, token, supercut);
+  const publishBody = args.noNarrate ? { ...supercut, narrate: false } : supercut;
+  const publishRes = await postJson(`${site}/api/publish`, token, publishBody);
   if (!publishRes.ok) {
     const body = await publishRes.text();
     throw new Error(`Publish failed: ${publishRes.status}\n${body}`);
   }
   const published = (await publishRes.json()) as { slug: string; url: string };
   console.log(`\nPublished: ${published.url}`);
+  if (!args.noNarrate) {
+    console.log('Narration is generating in the background (~30s); refresh the page.');
+  }
 
   if (args.feature) {
     const featureRes = await postJson(`${site}/api/feature`, token, { slug: published.slug });

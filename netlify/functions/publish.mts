@@ -5,11 +5,10 @@
  */
 
 import type { Config } from '@netlify/functions';
-import { narrate } from '../../src/lib/narrate';
 import { deepRedact } from '../../src/lib/parse/redact';
 import { generateSlug, putSupercut } from '../../src/lib/store';
 import { checkAuthToken, jsonResponse } from './_shared/auth';
-import { validateSupercutShape } from './_shared/validate';
+import { isPlainObject, validateSupercutShape } from './_shared/validate';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2 MB
 
@@ -49,17 +48,33 @@ export default async (req: Request): Promise<Response> => {
 
   // Defense in depth: the local CLI already redacts before publishing, but
   // never trust a client-submitted payload — redact the full object again
-  // server-side before it's narrated or persisted.
+  // server-side before it's persisted.
   const { value: redacted } = deepRedact(supercut);
 
-  try {
-    redacted.narration = await narrate(redacted);
-  } catch (err) {
-    // Narration is best-effort — never let it block publish.
-    console.error('narrate() failed, publishing without narration:', err);
-  }
-
   await putSupercut(redacted);
+
+  // AI narration runs out of the request path, in a background function —
+  // a synchronous call here could time out waiting on the LLM. Fire the
+  // trigger and don't wait on it; publish already succeeded. Callers opt
+  // out per-request with `{ narrate: false }` (the CLI's `--no-narrate`),
+  // and the site can be killed server-side with `DAILIES_NARRATE=off`.
+  const clientWantsNarration = !(isPlainObject(body) && body.narrate === false);
+  if (clientWantsNarration && Netlify.env.get('DAILIES_NARRATE') !== 'off') {
+    try {
+      fetch(new URL('/api/narrate', req.url), {
+        method: 'POST',
+        headers: {
+          authorization: req.headers.get('authorization') ?? '',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ slug: redacted.slug }),
+      }).catch((err: unknown) => {
+        console.error('[narrate] trigger request failed:', err);
+      });
+    } catch (err) {
+      console.error('[narrate] trigger failed:', err);
+    }
+  }
 
   const url = `${new URL(req.url).origin}/s/${redacted.slug}`;
   return jsonResponse({ slug: redacted.slug, url }, 201);
