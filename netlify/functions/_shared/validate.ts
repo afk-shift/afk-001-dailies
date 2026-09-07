@@ -60,11 +60,9 @@ function isValidEventIndex(value: unknown, eventCount: number): boolean {
  * array fields, a stats object), rejects the request if any event doesn't
  * pass `isValidEventShape`, and guards that every chapter's `startIndex`/
  * `endIndex` and every narration highlight's `eventIndex` (when a
- * `narration` is present) fall within `[0, events.length)`. The real size
- * limit is the caller's 2 MB payload cap (`publish.mts`), not an event
- * count — this endpoint no longer truncates `events`, since doing so while
- * keeping chapters/stats computed from the full transcript is exactly what
- * produced out-of-range chapter/highlight indices. Does not otherwise
+ * `narration` is present) fall within `[0, events.length)`: referenced
+ * chapter and highlight indexes must fit the submitted events. Payload size
+ * is capped by `MAX_BODY_BYTES`, not an event count. Does not otherwise
  * deep-validate cast/chapter/file shapes — the parser is the only trusted
  * producer of those, and this endpoint only needs to keep out obviously
  * malformed or internally-inconsistent payloads.

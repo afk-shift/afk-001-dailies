@@ -235,7 +235,11 @@ export function usePlayback(
   highlights: Narration['highlights'] | undefined,
   initialIndex = 0,
   initialMode: PlaybackMode = 'linear',
-  live = false,
+  // Whether a followed session is still actively updating — the caller's
+  // `live && follow.stopped === null`, not raw `?live=1` state, since a
+  // self-stopped follow (narrated/stale/timeout) must stop suppressing the
+  // deep link too.
+  activelyFollowing = false,
 ): Playback {
   const last = Math.max(0, events.length - 1);
 
@@ -265,7 +269,7 @@ export function usePlayback(
   // came back".
   const startIndex = useRef(index).current;
   const startMode = useRef(mode).current;
-  useDeepLink(index, startIndex, mode, startMode, live && index === last);
+  useDeepLink(index, startIndex, mode, startMode, activelyFollowing && index === last);
 
   // A live session growing under the playhead. Someone parked at the tip rides
   // it forward; anyone reading further back keeps their place. Neither touches

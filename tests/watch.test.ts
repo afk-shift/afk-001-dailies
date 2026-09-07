@@ -88,31 +88,12 @@ describe('tick (watch-loop state machine, interval ticks)', () => {
 });
 
 describe('stop (final-publish-on-stop, SIGINT)', () => {
-  it('always republishes even when nothing changed since the last tick', () => {
-    const state = initWatchState({ eventsLength: 10, toolCalls: 4 });
-    const { command } = stop(state, { eventsLength: 10, toolCalls: 4 }, false);
-    expect(command.kind).toBe('republish');
-    expect(command).toMatchObject({ final: true, deltaEvents: 0 });
-  });
-
   it('narrates by default (noNarrate: false)', () => {
-    const state = initWatchState({ eventsLength: 10, toolCalls: 4 });
-    const { command } = stop(state, { eventsLength: 12, toolCalls: 5 }, false);
-    expect(command).toMatchObject({ narrate: true, final: true, deltaEvents: 2 });
+    expect(stop(false)).toEqual({ narrate: true });
   });
 
   it('suppresses narration when noNarrate is true (--no-narrate)', () => {
-    const state = initWatchState({ eventsLength: 10, toolCalls: 4 });
-    const { command } = stop(state, { eventsLength: 12, toolCalls: 5 }, true);
-    expect(command).toMatchObject({ narrate: false, final: true, deltaEvents: 2 });
-  });
-
-  it('is marked final even though a regular tick with the same snapshot would not be', () => {
-    const state = initWatchState({ eventsLength: 10, toolCalls: 4 });
-    const stopped = stop(state, { eventsLength: 16, toolCalls: 6 }, false);
-    const ticked = tick(state, { eventsLength: 16, toolCalls: 6 });
-    expect(stopped.command).toMatchObject({ final: true });
-    expect(ticked.command).toMatchObject({ final: false });
+    expect(stop(true)).toEqual({ narrate: false });
   });
 });
 
@@ -221,8 +202,7 @@ describe('publish-failure-must-not-advance-state contract (tick + a fake publish
     const first = await runTick(state, grown, failingPublish);
     expect(first.published).toBe(false);
     expect(first.command).toEqual({ kind: 'republish', narrate: false, final: false, deltaEvents: 6 });
-    // State did NOT advance — this is the fix. Before it, `state` would
-    // already equal `{ last: grown }` here even though nothing was published.
+    // Failed publishes must retain the previous snapshot so the next tick retries.
     expect(first.state).toEqual({ last: { eventsLength: 10, toolCalls: 4 } });
     state = first.state;
 

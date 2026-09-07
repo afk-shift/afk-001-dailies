@@ -83,18 +83,20 @@ export function snapshotOf(supercut: Supercut): FollowSnapshot {
  * Whether a freshly fetched supercut should be applied to the page: it grew
  * past `currentEventCount`, or (compared against `last`, the snapshot of the
  * previous poll applied) narration appeared/changed, the title changed, or
- * `endedAt` changed. `last` is `null` on a follow run's first poll, when
- * there's nothing yet to compare narration/title/endedAt against — growth is
- * still checked against `currentEventCount` either way.
+ * `endedAt` changed. On a follow run's first poll, `last` is seeded from the
+ * currently rendered supercut (see `useLiveFollow`) rather than left empty —
+ * otherwise a final narrated publish that lands before the first poll (no
+ * event growth, since the watcher's last pass typically only adds narration
+ * and a polished title) would have nothing to compare against and never get
+ * applied.
  */
 export function hasLiveChange(
   next: Supercut,
   currentEventCount: number,
-  last: FollowSnapshot | null,
+  last: FollowSnapshot,
 ): boolean {
   const grew = Array.isArray(next.events) && next.events.length > currentEventCount;
   if (grew) return true;
-  if (!last) return false;
   const nextSnapshot = snapshotOf(next);
   return (
     nextSnapshot.narrationKey !== last.narrationKey ||
@@ -120,6 +122,7 @@ export function useLiveFollow(
   slug: string,
   enabled: boolean,
   count: number,
+  current: Supercut,
   onGrow: (next: Supercut) => void,
 ): LiveFollow {
   const [reconnecting, setReconnecting] = useState(false);
@@ -136,6 +139,11 @@ export function useLiveFollow(
   countRef.current = count;
   const growRef = useRef(onGrow);
   growRef.current = onGrow;
+  // The currently rendered supercut, kept fresh so the effect below can seed
+  // its first-poll comparison snapshot from what's actually on screen (see
+  // `lastSnapshot` in the effect and `hasLiveChange`'s docstring).
+  const currentRef = useRef(current);
+  currentRef.current = current;
 
   const resume = useCallback(() => {
     setStopped(null);
@@ -149,10 +157,10 @@ export function useLiveFollow(
     let timer: ReturnType<typeof setTimeout> | null = null;
     let failures = 0;
     let noChangePolls = 0;
-    // The snapshot of the last supercut applied to the page — `null` until
-    // the first poll lands, since there's nothing yet to compare
-    // narration/title/endedAt against (see `hasLiveChange`).
-    let lastSnapshot: FollowSnapshot | null = null;
+    // The snapshot of the last supercut applied to the page — seeded from
+    // what's currently rendered so the first poll compares against the real
+    // page state instead of nothing (see `hasLiveChange`'s docstring).
+    let lastSnapshot: FollowSnapshot = snapshotOf(currentRef.current);
     const startedAt = Date.now();
 
     const schedule = () => {

@@ -53,18 +53,26 @@ export function Player({
   const [live, setLive] = useState(initialLive);
 
   const { events, chapters } = supercut;
+
+  const follow = useLiveFollow(supercut.slug, live, events.length, supercut, setSupercut);
+  const likelyRunning = useLikelyRunning(supercut);
+
+  // `live` alone isn't "still actively following" — `useLiveFollow` can stop
+  // itself (narration landed, or the session looks stalled/timed out)
+  // without `live` ever going false, so the pill and the reel would
+  // otherwise disagree about whether the session is still live. This is the
+  // one signal both the end card and the deep-link writer key off of.
+  const activelyFollowing = live && follow.stopped === null;
+
   const playback = usePlayback(
     events,
     supercut.narration?.highlights,
     initialIndex,
     initialMode,
-    live,
+    activelyFollowing,
   );
   const { index, lastIndex, seek, step, toggle, toggleMode } = playback;
   const reducedMotion = useReducedMotion();
-
-  const follow = useLiveFollow(supercut.slug, live, events.length, setSupercut);
-  const likelyRunning = useLikelyRunning(supercut);
 
   const toggleLive = useCallback(() => {
     setLive((on) => !on);
@@ -231,7 +239,7 @@ export function Player({
           hues={hues}
           endCard={
             atEnd ? (
-              live ? (
+              activelyFollowing ? (
                 <LiveEndCard />
               ) : (
                 <EndCard supercut={supercut} onReplay={playback.play} />

@@ -75,16 +75,19 @@ export function tick(state: WatchState, snapshot: WatchSnapshot): WatchTransitio
 }
 
 /**
- * SIGINT: always republishes exactly once — regardless of whether anything
- * changed since the last tick — narrating unless `noNarrate` (the CLI's
- * `--no-narrate`) is set. This is the one place `narrate` can be `true`.
+ * SIGINT: the final publish always republishes exactly once — regardless of
+ * whether anything changed since the last tick — narrating unless
+ * `noNarrate` (the CLI's `--no-narrate`) is set. This is the one place
+ * `narrate` can be `true`.
+ *
+ * Returns only `narrate`, the one thing the caller (`publishFinal` in
+ * `scripts/dailies.ts`) uses: unlike `tick`, a stop has no `skip` branch to
+ * distinguish (it always republishes) and no `WatchState` worth handing
+ * back (this is always the last write for the slug, so nothing reads state
+ * afterward).
  */
-export function stop(state: WatchState, snapshot: WatchSnapshot, noNarrate: boolean): WatchTransition {
-  const deltaEvents = snapshot.eventsLength - state.last.eventsLength;
-  return {
-    state: { last: snapshot },
-    command: { kind: 'republish', narrate: !noNarrate, final: true, deltaEvents },
-  };
+export function stop(noNarrate: boolean): { narrate: boolean } {
+  return { narrate: !noNarrate };
 }
 
 /**

@@ -106,12 +106,7 @@ describe('snapshotOf', () => {
 describe('hasLiveChange (the "final narrated publish" fix — apply before stop)', () => {
   it('is true when events grew, regardless of last', () => {
     const next = makeSupercut({ events: [{ i: 0, t: 't', dtMs: 0, kind: 'milestone', text: 'x' }] });
-    expect(hasLiveChange(next, 0, null)).toBe(true);
-  });
-
-  it('is false on the first poll (last === null) when nothing grew', () => {
-    const next = makeSupercut();
-    expect(hasLiveChange(next, 0, null)).toBe(false);
+    expect(hasLiveChange(next, 0, snapshotOf(makeSupercut()))).toBe(true);
   });
 
   it("catches the watcher's final publish: narration appears with zero new events", () => {
@@ -147,5 +142,25 @@ describe('hasLiveChange (the "final narrated publish" fix — apply before stop)
   it('is false when nothing changed at all', () => {
     const supercut = makeSupercut();
     expect(hasLiveChange(supercut, 0, snapshotOf(supercut))).toBe(false);
+  });
+
+  it("a first poll seeded from the rendered (unnarrated) supercut still catches a final publish that lands with the same events already narrated, and that stops polling as 'narrated'", () => {
+    // The rendered doc has no narration yet — this is what `useLiveFollow`
+    // now seeds its comparison snapshot with instead of `null`, so the very
+    // first poll has something real to compare against.
+    const rendered = makeSupercut();
+    const seeded = snapshotOf(rendered);
+
+    // The first poll's response: same events, but the watcher's final
+    // (narrated) publish already landed.
+    const next = makeSupercut({
+      narration: { synopsis: 'Wrapped up', highlights: [], generatedBy: 'claude-sonnet-5' },
+    });
+
+    expect(hasLiveChange(next, rendered.events.length, seeded)).toBe(true);
+    expect(nextPollDecision({ noChangePolls: 0, elapsedMs: 0, narrated: Boolean(next.narration) })).toEqual({
+      action: 'stop',
+      reason: 'narrated',
+    });
   });
 });

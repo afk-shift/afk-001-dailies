@@ -164,14 +164,13 @@ describe('validateSupercutShape', () => {
       expect(result).toEqual({ ok: false, error: 'chapters contains a malformed entry' });
     });
 
-    it('is exactly what the old 5000-event truncation used to break: a chapter referencing an index beyond a truncated events array is now caught instead of silently persisted', () => {
+    it('rejects a chapter index that is out of range for the submitted events, even when it would fit a longer transcript', () => {
       const events = Array.from({ length: 10 }, (_, i) => ({ i, t: 't', kind: 'tool' }));
       const result = validateSupercutShape(
         validBody({
           events,
-          // Simulates what the old MAX_EVENTS=5000 slice produced for a longer
-          // transcript: a chapter computed against the full (pre-truncation)
-          // event count, now pointing past the end of the (here, 10-event) array.
+          // The chapter's indexes must fit the events actually submitted
+          // here, even though they'd be in range against a longer transcript.
           chapters: [{ id: 'c9', title: 'Late chapter', startIndex: 9, endIndex: 20 }],
         }),
       );

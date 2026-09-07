@@ -424,13 +424,11 @@ async function runWatch(args: CliArgs, token: string, site: string): Promise<voi
    */
   const publishFinal = async (): Promise<void> => {
     const loaded = loadSession(args.input, args.title);
-    const { command } = stop(state, snapshotOf(loaded.supercut), args.noNarrate);
-    // `stop` always returns `{ kind: 'republish', ... }` — see scripts/lib/watch.ts.
-    if (command.kind !== 'republish') throw new Error('unreachable: stop() always republishes');
+    const { narrate } = stop(args.noNarrate);
     const finalPublished = await publishSupercut(loaded.supercut, {
       site,
       token,
-      narrate: command.narrate,
+      narrate,
       slug,
     });
     console.log(`Final publish with narration: ${finalPublished.url}`);
