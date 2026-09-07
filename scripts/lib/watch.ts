@@ -53,8 +53,15 @@ export interface WatchTransition {
  * One interval tick: compares `snapshot` (the freshly re-parsed transcript)
  * against the last published snapshot. Unchanged -> `skip` (state
  * untouched). Changed -> `republish` with `narrate: false` (interval ticks
- * never narrate) and the event-count delta since the last publish, and the
- * state advances to `snapshot`.
+ * never narrate) and the event-count delta since the last publish, plus a
+ * proposed next state advanced to `snapshot`.
+ *
+ * That proposed state is not yet safe to commit — this function is pure and
+ * has no idea whether the publish it authorizes will actually succeed. The
+ * caller (`scripts/dailies.ts`) must only assign its `state` to the returned
+ * `state` *after* `publishSupercut` resolves; on a failed publish it must
+ * keep the old state so the next tick's comparison — and republish — covers
+ * the same (or a larger) delta instead of silently skipping it.
  */
 export function tick(state: WatchState, snapshot: WatchSnapshot): WatchTransition {
   if (!hasChanged(state.last, snapshot)) {
@@ -100,9 +107,24 @@ export async function finalizeWatch(
   await publishFinal();
 }
 
+/** Zero-padded `hh:mm:ss` for a given time — shared by the tick and publish-failure log lines. */
+function formatClock(now: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 /** Formats the compact per-update line: `hh:mm:ss  +N events · tools T · commits C`. */
 export function formatTickLine(now: Date, deltaEvents: number, toolCalls: number, commits: number): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  const hhmmss = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  return `${hhmmss}  +${deltaEvents} events · tools ${toolCalls} · commits ${commits}`;
+  return `${formatClock(now)}  +${deltaEvents} events · tools ${toolCalls} · commits ${commits}`;
+}
+
+/**
+ * Formats the one-line notice for a tick whose publish failed:
+ * `hh:mm:ss  publish failed: <msg> — will retry`. Logged instead of
+ * `formatTickLine` when `publishSupercut` throws — the caller keeps the old
+ * `WatchState` in this case (see `tick`'s docstring), so the next tick
+ * retries the same delta.
+ */
+export function formatPublishFailedLine(now: Date, message: string): string {
+  return `${formatClock(now)}  publish failed: ${message} — will retry`;
 }

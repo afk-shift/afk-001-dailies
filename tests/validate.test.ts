@@ -93,13 +93,145 @@ describe('validateSupercutShape', () => {
     expect(result).toEqual({ ok: false, error: 'events contains a malformed entry' });
   });
 
-  it('caps events at MAX_EVENTS (5000) without erroring', () => {
+  it('does not truncate events beyond 5000 — the real limit is the caller\'s 2 MB payload cap', () => {
     const events = Array.from({ length: 6000 }, (_, i) => ({ i, t: 't', kind: 'tool' }));
     const result = validateSupercutShape(validBody({ events }));
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.events).toHaveLength(5000);
+      expect(result.value.events).toHaveLength(6000);
     }
+  });
+
+  describe('chapter index guard', () => {
+    it('accepts a chapter whose startIndex/endIndex are within events.length', () => {
+      const result = validateSupercutShape(
+        validBody({
+          events: [
+            { i: 0, t: 't', kind: 'prompt' },
+            { i: 1, t: 't', kind: 'reply' },
+          ],
+          chapters: [{ id: 'c0', title: 'Chapter 1', startIndex: 0, endIndex: 1 }],
+        }),
+      );
+      expect(result.ok).toBe(true);
+    });
+
+    it('rejects a chapter with an out-of-range startIndex', () => {
+      const result = validateSupercutShape(
+        validBody({
+          events: [{ i: 0, t: 't', kind: 'prompt' }],
+          chapters: [{ id: 'c0', title: 'Chapter 1', startIndex: 5, endIndex: 5 }],
+        }),
+      );
+      expect(result).toEqual({ ok: false, error: 'chapter startIndex/endIndex out of range' });
+    });
+
+    it('rejects a chapter with an out-of-range endIndex', () => {
+      const result = validateSupercutShape(
+        validBody({
+          events: [{ i: 0, t: 't', kind: 'prompt' }],
+          chapters: [{ id: 'c0', title: 'Chapter 1', startIndex: 0, endIndex: 5 }],
+        }),
+      );
+      expect(result).toEqual({ ok: false, error: 'chapter startIndex/endIndex out of range' });
+    });
+
+    it('rejects a chapter with a non-integer or negative index', () => {
+      const negative = validateSupercutShape(
+        validBody({
+          events: [{ i: 0, t: 't', kind: 'prompt' }],
+          chapters: [{ id: 'c0', title: 'Chapter 1', startIndex: -1, endIndex: 0 }],
+        }),
+      );
+      expect(negative).toEqual({ ok: false, error: 'chapter startIndex/endIndex out of range' });
+
+      const fractional = validateSupercutShape(
+        validBody({
+          events: [{ i: 0, t: 't', kind: 'prompt' }],
+          chapters: [{ id: 'c0', title: 'Chapter 1', startIndex: 0.5, endIndex: 0 }],
+        }),
+      );
+      expect(fractional).toEqual({ ok: false, error: 'chapter startIndex/endIndex out of range' });
+    });
+
+    it('rejects a non-object chapter entry', () => {
+      const result = validateSupercutShape(
+        validBody({
+          events: [{ i: 0, t: 't', kind: 'prompt' }],
+          chapters: ['not an object'],
+        }),
+      );
+      expect(result).toEqual({ ok: false, error: 'chapters contains a malformed entry' });
+    });
+
+    it('is exactly what the old 5000-event truncation used to break: a chapter referencing an index beyond a truncated events array is now caught instead of silently persisted', () => {
+      const events = Array.from({ length: 10 }, (_, i) => ({ i, t: 't', kind: 'tool' }));
+      const result = validateSupercutShape(
+        validBody({
+          events,
+          // Simulates what the old MAX_EVENTS=5000 slice produced for a longer
+          // transcript: a chapter computed against the full (pre-truncation)
+          // event count, now pointing past the end of the (here, 10-event) array.
+          chapters: [{ id: 'c9', title: 'Late chapter', startIndex: 9, endIndex: 20 }],
+        }),
+      );
+      expect(result).toEqual({ ok: false, error: 'chapter startIndex/endIndex out of range' });
+    });
+  });
+
+  describe('narration highlight index guard', () => {
+    it('accepts a body with no narration at all', () => {
+      const result = validateSupercutShape(validBody());
+      expect(result.ok).toBe(true);
+    });
+
+    it('accepts narration whose highlight eventIndex values are within events.length', () => {
+      const result = validateSupercutShape(
+        validBody({
+          events: [
+            { i: 0, t: 't', kind: 'prompt' },
+            { i: 1, t: 't', kind: 'reply' },
+          ],
+          narration: {
+            synopsis: 'Did a thing',
+            generatedBy: 'claude-sonnet-5',
+            highlights: [{ eventIndex: 1, text: 'The reply' }],
+          },
+        }),
+      );
+      expect(result.ok).toBe(true);
+    });
+
+    it('rejects narration with an out-of-range highlight eventIndex', () => {
+      const result = validateSupercutShape(
+        validBody({
+          events: [{ i: 0, t: 't', kind: 'prompt' }],
+          narration: {
+            synopsis: 'Did a thing',
+            generatedBy: 'claude-sonnet-5',
+            highlights: [{ eventIndex: 7, text: 'Nope' }],
+          },
+        }),
+      );
+      expect(result).toEqual({ ok: false, error: 'narration highlight eventIndex out of range' });
+    });
+
+    it('rejects narration whose highlights is not an array', () => {
+      const result = validateSupercutShape(
+        validBody({
+          events: [{ i: 0, t: 't', kind: 'prompt' }],
+          narration: { synopsis: 'x', generatedBy: 'claude-sonnet-5', highlights: 'nope' },
+        }),
+      );
+      expect(result).toEqual({ ok: false, error: 'narration must be an object with a highlights array' });
+    });
+
+    it('rejects a non-object narration', () => {
+      const result = validateSupercutShape(
+        validBody({ events: [{ i: 0, t: 't', kind: 'prompt' }], narration: 'nope' }),
+      );
+      expect(result).toEqual({ ok: false, error: 'narration must be an object with a highlights array' });
+    });
   });
 });
 

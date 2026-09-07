@@ -9,9 +9,7 @@ import type { Config } from '@netlify/functions';
 import { deepRedact } from '../../src/lib/parse/redact';
 import { generateSlug, getSupercut, putSupercut } from '../../src/lib/store';
 import { checkAuthToken, jsonResponse } from './_shared/auth';
-import { isPlainObject, isValidSlugShape, validateSupercutShape } from './_shared/validate';
-
-const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2 MB
+import { MAX_BODY_BYTES, isPlainObject, isValidSlugShape, validateSupercutShape } from './_shared/validate';
 
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {

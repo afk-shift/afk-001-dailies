@@ -3,6 +3,7 @@ import {
   DEFAULT_INTERVAL_SECONDS,
   MIN_INTERVAL_SECONDS,
   finalizeWatch,
+  formatPublishFailedLine,
   formatTickLine,
   hasChanged,
   initWatchState,
@@ -10,6 +11,7 @@ import {
   stop,
   tick,
   type WatchSnapshot,
+  type WatchState,
 } from '../scripts/lib/watch';
 
 describe('resolveIntervalSeconds', () => {
@@ -169,5 +171,73 @@ describe('formatTickLine', () => {
   it('handles double-digit time components without extra padding', () => {
     const now = new Date(2026, 8, 6, 23, 59, 59);
     expect(formatTickLine(now, 0, 100, 10)).toBe('23:59:59  +0 events · tools 100 · commits 10');
+  });
+});
+
+describe('formatPublishFailedLine', () => {
+  it('formats hh:mm:ss with zero-padding, plus the error message and a retry note', () => {
+    const now = new Date(2026, 8, 6, 9, 4, 7);
+    expect(formatPublishFailedLine(now, 'HTTP 503')).toBe('09:04:07  publish failed: HTTP 503 — will retry');
+  });
+
+  it('handles double-digit time components without extra padding', () => {
+    const now = new Date(2026, 8, 6, 23, 59, 59);
+    expect(formatPublishFailedLine(now, 'network blip')).toBe(
+      '23:59:59  publish failed: network blip — will retry',
+    );
+  });
+});
+
+describe('publish-failure-must-not-advance-state contract (tick + a fake publish)', () => {
+  /**
+   * Mirrors the corrected `runTick` in `scripts/dailies.ts`: only commits
+   * `tick`'s proposed next state after `publish()` resolves; on rejection it
+   * returns the command (for the failure log) but leaves `state` untouched.
+   */
+  async function runTick(
+    state: WatchState,
+    snapshot: WatchSnapshot,
+    publish: () => Promise<void>,
+  ): Promise<{ state: WatchState; command: ReturnType<typeof tick>['command']; published: boolean }> {
+    const { state: nextState, command } = tick(state, snapshot);
+    if (command.kind !== 'republish') return { state, command, published: false };
+    try {
+      await publish();
+    } catch {
+      return { state, command, published: false };
+    }
+    return { state: nextState, command, published: true };
+  }
+
+  it('keeps the old state when publishSupercut throws, so the next tick retries the same delta', async () => {
+    let state = initWatchState({ eventsLength: 10, toolCalls: 4 });
+    let publishAttempts = 0;
+    const failingPublish = () => {
+      publishAttempts += 1;
+      return Promise.reject(new Error('network blip'));
+    };
+
+    const grown: WatchSnapshot = { eventsLength: 16, toolCalls: 6 };
+    const first = await runTick(state, grown, failingPublish);
+    expect(first.published).toBe(false);
+    expect(first.command).toEqual({ kind: 'republish', narrate: false, final: false, deltaEvents: 6 });
+    // State did NOT advance — this is the fix. Before it, `state` would
+    // already equal `{ last: grown }` here even though nothing was published.
+    expect(first.state).toEqual({ last: { eventsLength: 10, toolCalls: 4 } });
+    state = first.state;
+
+    // Next tick, transcript unchanged since the failed attempt: comparing
+    // against the still-un-advanced state means the same delta is retried
+    // rather than silently skipped.
+    const succeedingPublish = () => {
+      publishAttempts += 1;
+      return Promise.resolve();
+    };
+    const second = await runTick(state, grown, succeedingPublish);
+    expect(second.published).toBe(true);
+    expect(second.command).toEqual({ kind: 'republish', narrate: false, final: false, deltaEvents: 6 });
+    expect(second.state).toEqual({ last: grown });
+
+    expect(publishAttempts).toBe(2);
   });
 });

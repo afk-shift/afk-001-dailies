@@ -12,10 +12,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { MAX_BODY_BYTES } from '../netlify/functions/_shared/validate';
 import { parseSessionWithRedactions, type SessionInput } from '../src/lib/parse';
 import type { Supercut } from '../src/lib/types';
 import {
   finalizeWatch,
+  formatPublishFailedLine,
   formatTickLine,
   initWatchState,
   resolveIntervalSeconds,
@@ -246,6 +248,35 @@ async function postJson(url: string, token: string, body: unknown): Promise<Resp
   });
 }
 
+/** POSTs an already-serialized JSON string — used by `publishSupercut`, which needs the exact byte length before sending. */
+async function postSerializedJson(url: string, token: string, serializedBody: string): Promise<Response> {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: serializedBody,
+  });
+}
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+/**
+ * Checks a serialized publish body against `MAX_BODY_BYTES` — the same 2 MB
+ * cap `publish.mts` enforces server-side — and returns a clear, user-facing
+ * message when it's over, or `null` when it's within bounds. Checked before
+ * sending so an oversized session fails fast on the CLI instead of getting a
+ * 413 back from the server.
+ */
+export function publishSizeError(serializedBody: string): string | null {
+  const byteLength = new TextEncoder().encode(serializedBody).length;
+  if (byteLength <= MAX_BODY_BYTES) return null;
+  return (
+    `Publish payload is ${formatMegabytes(byteLength)}, over the server's ${formatMegabytes(MAX_BODY_BYTES)} limit. ` +
+    'Trim the session (fewer subagents or a shorter transcript) before publishing.'
+  );
+}
+
 interface LoadedSession {
   supercut: Supercut;
   redactionCount: number;
@@ -281,12 +312,22 @@ interface PublishOptions {
   slug?: string;
 }
 
-/** POSTs a Supercut to `/api/publish` and returns its published `{ slug, url }`. */
+/**
+ * POSTs a Supercut to `/api/publish` and returns its published `{ slug, url }`.
+ * Checks the serialized body against `MAX_BODY_BYTES` (the same 2 MB cap the
+ * server enforces) before sending, so an oversized session fails fast with a
+ * clear message instead of a 413 from the server.
+ */
 async function publishSupercut(supercut: Supercut, opts: PublishOptions): Promise<{ slug: string; url: string }> {
   const publishBody: Record<string, unknown> = { ...supercut };
   if (!opts.narrate) publishBody.narrate = false;
   if (opts.slug) publishBody.slug = opts.slug;
-  const publishRes = await postJson(`${opts.site}/api/publish`, opts.token, publishBody);
+
+  const serialized = JSON.stringify(publishBody);
+  const sizeError = publishSizeError(serialized);
+  if (sizeError) throw new Error(sizeError);
+
+  const publishRes = await postSerializedJson(`${opts.site}/api/publish`, opts.token, serialized);
   if (!publishRes.ok) {
     const body = await publishRes.text();
     throw new Error(`Publish failed: ${publishRes.status}\n${body}`);
@@ -348,8 +389,17 @@ async function runWatch(args: CliArgs, token: string, site: string): Promise<voi
       const loaded = loadSession(args.input, args.title);
       const { state: nextState, command } = tick(state, snapshotOf(loaded.supercut));
       if (command.kind === 'republish') {
+        // Only commit `nextState` once the publish it authorizes has
+        // actually landed — if it throws, keep the old `state` so the next
+        // tick's comparison covers the same (or a larger) delta instead of
+        // silently skipping the transcript that never got published.
+        try {
+          await publishSupercut(loaded.supercut, { site, token, narrate: false, slug });
+        } catch (err) {
+          console.error(formatPublishFailedLine(new Date(), err instanceof Error ? err.message : String(err)));
+          return;
+        }
         state = nextState;
-        await publishSupercut(loaded.supercut, { site, token, narrate: false, slug });
         console.log(
           formatTickLine(new Date(), command.deltaEvents, loaded.supercut.stats.toolCalls, loaded.supercut.stats.commits),
         );

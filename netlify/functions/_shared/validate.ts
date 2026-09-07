@@ -6,7 +6,14 @@
 
 import type { Event, Supercut } from '../../../src/lib/types';
 
-const MAX_EVENTS = 5000;
+/**
+ * The publish payload's real size limit — enforced by `publish.mts` against
+ * the raw request body before it's even parsed as JSON, and checked by the
+ * CLI (`scripts/dailies.ts`) against the serialized body before it sends, so
+ * an oversized payload fails fast with a clear message instead of a 413.
+ * There is no separate event-count cap — see `validateSupercutShape`.
+ */
+export const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2 MB
 
 /** The server's slug shape: 10 lowercase base32 (RFC 4648, no padding) characters — see `generateSlug` in `src/lib/store.ts`. */
 const SLUG_RE = /^[a-z2-7]{10}$/;
@@ -43,13 +50,24 @@ export function isValidEventShape(value: unknown): boolean {
   return true;
 }
 
+/** True when `value` is an integer event index within `[0, eventCount)`. */
+function isValidEventIndex(value: unknown, eventCount: number): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < eventCount;
+}
+
 /**
  * Validates the top-level shape the spec requires (version, string fields,
  * array fields, a stats object), rejects the request if any event doesn't
- * pass `isValidEventShape`, and caps `events` at `MAX_EVENTS`. Does not
+ * pass `isValidEventShape`, and guards that every chapter's `startIndex`/
+ * `endIndex` and every narration highlight's `eventIndex` (when a
+ * `narration` is present) fall within `[0, events.length)`. The real size
+ * limit is the caller's 2 MB payload cap (`publish.mts`), not an event
+ * count — this endpoint no longer truncates `events`, since doing so while
+ * keeping chapters/stats computed from the full transcript is exactly what
+ * produced out-of-range chapter/highlight indices. Does not otherwise
  * deep-validate cast/chapter/file shapes — the parser is the only trusted
  * producer of those, and this endpoint only needs to keep out obviously
- * malformed payloads.
+ * malformed or internally-inconsistent payloads.
  */
 export function validateSupercutShape(body: unknown): ValidationResult {
   if (!isPlainObject(body)) {
@@ -76,10 +94,32 @@ export function validateSupercutShape(body: unknown): ValidationResult {
     return { ok: false, error: 'stats must be an object' };
   }
 
-  const events = (body.events as unknown[]).slice(0, MAX_EVENTS);
+  const events = body.events as unknown[];
   for (const event of events) {
     if (!isValidEventShape(event)) {
       return { ok: false, error: 'events contains a malformed entry' };
+    }
+  }
+
+  const eventCount = events.length;
+
+  for (const chapter of body.chapters as unknown[]) {
+    if (!isPlainObject(chapter)) {
+      return { ok: false, error: 'chapters contains a malformed entry' };
+    }
+    if (!isValidEventIndex(chapter.startIndex, eventCount) || !isValidEventIndex(chapter.endIndex, eventCount)) {
+      return { ok: false, error: 'chapter startIndex/endIndex out of range' };
+    }
+  }
+
+  if (body.narration !== undefined) {
+    if (!isPlainObject(body.narration) || !Array.isArray(body.narration.highlights)) {
+      return { ok: false, error: 'narration must be an object with a highlights array' };
+    }
+    for (const highlight of body.narration.highlights) {
+      if (!isPlainObject(highlight) || !isValidEventIndex(highlight.eventIndex, eventCount)) {
+        return { ok: false, error: 'narration highlight eventIndex out of range' };
+      }
     }
   }
 

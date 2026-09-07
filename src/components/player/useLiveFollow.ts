@@ -3,8 +3,12 @@
  *
  * The CLI's `--watch` mode republishes a growing session over the same slug
  * every twenty seconds or so, so the page re-reads `/s/<slug>.json` on a timer
- * and hands the whole document back whenever it has more events than what's on
- * screen. The JSON is the source of truth — nothing here diffs it.
+ * and hands the whole document back whenever it changed since the last poll —
+ * more events, new/changed narration, a refined title, or a new `endedAt`.
+ * The watcher's final publish typically adds narration and a polished title
+ * with no new events, so growth alone isn't enough to catch it. The JSON is
+ * the source of truth — nothing here diffs it beyond deciding whether to
+ * apply it.
  *
  * Polling only runs while the tab is visible, and a failed read backs off
  * rather than hammering a server that's already unhappy. It also doesn't run
@@ -22,8 +26,8 @@ const INTERVALS = [15_000, 30_000, 60_000];
 /** How recently a session must have ended to still count as "probably live". */
 const RUNNING_WINDOW_MS = 30 * 60_000;
 
-/** Consecutive no-growth polls before the session is considered stale (~7.5 min at the 15s base interval). */
-const MAX_NO_GROWTH_POLLS = 30;
+/** Consecutive no-change polls before the session is considered stale (~7.5 min at the 15s base interval). */
+const MAX_NO_CHANGE_POLLS = 30;
 
 /** Total time a single follow run is allowed to keep polling. */
 const MAX_FOLLOW_MS = 2 * 60 * 60_000;
@@ -32,8 +36,8 @@ const MAX_FOLLOW_MS = 2 * 60 * 60_000;
 export type PollStopReason = 'narrated' | 'stale' | 'timeout';
 
 export interface PollState {
-  /** Consecutive polls since the transcript last grew. */
-  noGrowthPolls: number;
+  /** Consecutive polls since the transcript last changed (grew, or picked up new narration/title/endedAt). */
+  noChangePolls: number;
   /** Ms elapsed since this follow run started (or was last resumed). */
   elapsedMs: number;
   /** Whether the most recently fetched supercut carries narration. */
@@ -47,14 +51,56 @@ export type PollDecision = { action: 'continue' } | { action: 'stop'; reason: Po
  * behaved so far. Checked in order of precedence:
  *   1. Narration means the watcher's final publish already landed (the
  *      session is over) — wins over the other two regardless of counters.
- *   2. 30 consecutive polls with no growth means the session looks stalled.
+ *      Callers must apply that narrated supercut (via `hasLiveChange`) before
+ *      consulting this, since the final publish often carries no new events.
+ *   2. 30 consecutive polls with no change means the session looks stalled.
  *   3. 2 hours total is a hard cap so a forgotten tab can't poll forever.
  */
 export function nextPollDecision(state: PollState): PollDecision {
   if (state.narrated) return { action: 'stop', reason: 'narrated' };
-  if (state.noGrowthPolls >= MAX_NO_GROWTH_POLLS) return { action: 'stop', reason: 'stale' };
+  if (state.noChangePolls >= MAX_NO_CHANGE_POLLS) return { action: 'stop', reason: 'stale' };
   if (state.elapsedMs >= MAX_FOLLOW_MS) return { action: 'stop', reason: 'timeout' };
   return { action: 'continue' };
+}
+
+/** The subset of a fetched supercut that determines whether polling should treat it as "changed" — cheap to compare, cheaper than diffing `events`. */
+export interface FollowSnapshot {
+  narrationKey: string | null;
+  title: string;
+  endedAt: string;
+}
+
+/** Narration's identity for change detection: `generatedBy` + `synopsis`, so a re-narrated pass (same generator, new synopsis) still counts as a change. */
+export function snapshotOf(supercut: Supercut): FollowSnapshot {
+  return {
+    narrationKey: supercut.narration ? `${supercut.narration.generatedBy}::${supercut.narration.synopsis}` : null,
+    title: supercut.title,
+    endedAt: supercut.endedAt,
+  };
+}
+
+/**
+ * Whether a freshly fetched supercut should be applied to the page: it grew
+ * past `currentEventCount`, or (compared against `last`, the snapshot of the
+ * previous poll applied) narration appeared/changed, the title changed, or
+ * `endedAt` changed. `last` is `null` on a follow run's first poll, when
+ * there's nothing yet to compare narration/title/endedAt against — growth is
+ * still checked against `currentEventCount` either way.
+ */
+export function hasLiveChange(
+  next: Supercut,
+  currentEventCount: number,
+  last: FollowSnapshot | null,
+): boolean {
+  const grew = Array.isArray(next.events) && next.events.length > currentEventCount;
+  if (grew) return true;
+  if (!last) return false;
+  const nextSnapshot = snapshotOf(next);
+  return (
+    nextSnapshot.narrationKey !== last.narrationKey ||
+    nextSnapshot.title !== last.title ||
+    nextSnapshot.endedAt !== last.endedAt
+  );
 }
 
 export interface LiveFollow {
@@ -80,7 +126,7 @@ export function useLiveFollow(
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [stopped, setStopped] = useState<PollStopReason | null>(null);
   // Bumped by `resume()` to force the effect below to re-run with a fresh
-  // closure — which is where `noGrowthPolls`/`startedAt` actually reset.
+  // closure — which is where `noChangePolls`/`startedAt` actually reset.
   const [resumeToken, setResumeToken] = useState(0);
 
   const baseline = useRef(count).current;
@@ -102,7 +148,11 @@ export function useLiveFollow(
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let failures = 0;
-    let noGrowthPolls = 0;
+    let noChangePolls = 0;
+    // The snapshot of the last supercut applied to the page — `null` until
+    // the first poll lands, since there's nothing yet to compare
+    // narration/title/endedAt against (see `hasLiveChange`).
+    let lastSnapshot: FollowSnapshot | null = null;
     const startedAt = Date.now();
 
     const schedule = () => {
@@ -132,17 +182,22 @@ export function useLiveFollow(
         failures = 0;
         setReconnecting(false);
 
-        const grew = Array.isArray(next.events) && next.events.length > countRef.current;
-        if (grew) {
-          noGrowthPolls = 0;
+        // Apply `next` — and reset the snapshot used for the next
+        // comparison — *before* deciding whether to stop, since the
+        // watcher's final publish (narration + a refined title) typically
+        // carries no new events and would otherwise never reach the page.
+        const changed = hasLiveChange(next, countRef.current, lastSnapshot);
+        lastSnapshot = snapshotOf(next);
+        if (changed) {
+          noChangePolls = 0;
           growRef.current(next);
           setUpdatedAt(Date.now());
         } else {
-          noGrowthPolls += 1;
+          noChangePolls += 1;
         }
 
         const decision = nextPollDecision({
-          noGrowthPolls,
+          noChangePolls,
           elapsedMs: Date.now() - startedAt,
           narrated: Boolean(next.narration),
         });
