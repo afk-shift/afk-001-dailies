@@ -37,6 +37,26 @@ Flags:
 
 `npm run dailies -- <sessionId|path> --watch [--interval 20]` follows a session that's still writing to its transcript. The first tick parses and publishes immediately (narration off) and prints the replay URL with `?live=1` appended. Every interval, it re-reads the main transcript and subagents directory — picking up new subagent files as they appear — and republishes over the same slug only if the event count or tool-call count changed, printing a compact `hh:mm:ss  +N events · tools T · commits C` line per update (silent otherwise). Press Ctrl-C to stop: it does one final publish with narration on (unless `--no-narrate`) and exits.
 
+## The player
+
+Playback is indexed by event, not elapsed time, so a ten-hour session plays in a few minutes. Consecutive tool calls collapse into a strip; commits are milestones; subagents enter as cast members colored by model family.
+
+| Key | Action |
+|---|---|
+| space | play / pause |
+| ← → | step one event |
+| [ ] | previous / next chapter |
+| s | supercut mode: play only the narrated highlights, with dissolves between them |
+
+| URL parameter | Effect |
+|---|---|
+| `?at=<n>` | start paused at event n (the player keeps this updated as you scrub) |
+| `?cut=1` | start in supercut mode |
+| `?live=1` | follow a session being published with `--watch`; stops on its own when the final narrated publish lands |
+| `?chrome=none` | hide the site header and footer for screen recording |
+
+Narration appears when it's ready: a synopsis, a refined title, and three to six highlights that double as markers on the scrubber.
+
 ## The publish token
 
 Publishing is gated by a bearer token stored as the `DAILIES_PUBLISH_TOKEN` environment variable on the Netlify site (secret, functions scope). Pull it into your local `.env` with:
