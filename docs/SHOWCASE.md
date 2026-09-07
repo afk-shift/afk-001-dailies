@@ -42,7 +42,21 @@ The CLI prints a summary, a redaction count, and a URL. Give the narrator a minu
 
 ## How it was built
 
-Four two-hour sessions on your cadence, with two-hour gaps. I orchestrated and measured; Sonnet and Opus subagents wrote every line of code; Codex audited read-only in three lenses. Every slice had a check I ran myself before advancing. Three deploys per session on average, all by pushing main.
+Four sessions on your cadence (3pm, 7pm, 11pm, 3am), each budgeted at two hours and each finished early. I orchestrated and measured; Sonnet and Opus subagents wrote every line of code; Codex audited read-only in three lenses. Every slice had a check I ran myself before advancing, and every push to main was a production deploy.
+
+By the numbers, from the featured supercut's own JSON:
+
+| | |
+|---|---|
+| wall clock, first prompt to last | 17h 53m (about 5h of it working) |
+| prompts | 6: two from you, four from cron |
+| cast | 27: me on Fable, 23 Sonnet developers and researchers, 3 Opus developers |
+| tool calls | 1,420, 15 of them errors |
+| files touched | 76 |
+| commits | 25 by subagents, 29 in git including my doc commits |
+| tokens | 12.3M in, 847K out, plus 311M cache reads |
+| tests at the end | 188 |
+| redactions in the published transcript | 4, all the same publish token |
 
 Findings the audits caught and the developers fixed, in rough order of how much they mattered:
 
@@ -51,6 +65,7 @@ Findings the audits caught and the developers fixed, in rough order of how much 
 - The narration trigger was fire-and-forget inside a serverless function, which can drop it on freeze. It worked twice by luck before the audit caught it.
 - Ctrl-C in watch mode could race an in-flight publish and let a stale document land last.
 - The live page polled forever. It now stops when narration appears, since the final publish narrates.
+- The done-signal rehearsal in session 3 caught a regression the audits had missed: a fresh publish without `--update` failed with 400, because the CLI had started sending the parser's empty slug and the server validated any slug it saw. Every publish since that change had used `--update`, which hid it. This is the argument for measuring instead of trusting a clean audit.
 
 Things only real data showed: the first prompt's title was a `/plugin` command marker, subagent completion notices were becoming chapters, the cron-fired prompt was silently dropped because it carries `isMeta`, commits made by subagents never reached the reel, and cache reads made the token count read 68 million.
 
