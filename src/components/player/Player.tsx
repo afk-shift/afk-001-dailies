@@ -54,6 +54,14 @@ export function Player({
 
   const { events, chapters } = supercut;
 
+  // Live follow can replace `supercut` with a refreshed publish whose title
+  // changed — the `<h1>` already re-renders off state, but `document.title`
+  // needs its own push to stay in sync. Matches the separator Base.astro uses.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.title = `${supercut.title} — Dailies`;
+  }, [supercut.title]);
+
   const follow = useLiveFollow(supercut.slug, live, events.length, supercut, setSupercut);
   const likelyRunning = useLikelyRunning(supercut);
 
