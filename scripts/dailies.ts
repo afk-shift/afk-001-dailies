@@ -313,15 +313,35 @@ interface PublishOptions {
 }
 
 /**
+ * Builds the wire body for `POST /api/publish` from a parsed Supercut. A
+ * fresh Supercut out of the parser always carries `slug: ''` (assigned
+ * server-side, not by the parser) — this strips that field out entirely
+ * rather than sending it, so a fresh publish never sends an empty `slug`
+ * for the server to reject (see `isSuppliedSlug` in
+ * `netlify/functions/_shared/validate.ts`). `slug` is only included when
+ * the caller explicitly passed one (`--update <slug>`, or the watch loop
+ * reusing its published slug on later ticks). The rest of the document is
+ * sent intact.
+ */
+export function buildPublishBody(
+  supercut: Supercut,
+  opts: { narrate: boolean; slug?: string },
+): Record<string, unknown> {
+  const { slug: _slug, ...rest } = supercut;
+  const publishBody: Record<string, unknown> = { ...rest };
+  if (!opts.narrate) publishBody.narrate = false;
+  if (opts.slug) publishBody.slug = opts.slug;
+  return publishBody;
+}
+
+/**
  * POSTs a Supercut to `/api/publish` and returns its published `{ slug, url }`.
  * Checks the serialized body against `MAX_BODY_BYTES` (the same 2 MB cap the
  * server enforces) before sending, so an oversized session fails fast with a
  * clear message instead of a 413 from the server.
  */
 async function publishSupercut(supercut: Supercut, opts: PublishOptions): Promise<{ slug: string; url: string }> {
-  const publishBody: Record<string, unknown> = { ...supercut };
-  if (!opts.narrate) publishBody.narrate = false;
-  if (opts.slug) publishBody.slug = opts.slug;
+  const publishBody = buildPublishBody(supercut, opts);
 
   const serialized = JSON.stringify(publishBody);
   const sizeError = publishSizeError(serialized);

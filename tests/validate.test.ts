@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEventShape, isValidSlugShape, validateSupercutShape } from '../netlify/functions/_shared/validate';
+import { isSuppliedSlug, isValidEventShape, isValidSlugShape, validateSupercutShape } from '../netlify/functions/_shared/validate';
 
 function validBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -265,5 +265,44 @@ describe('isValidSlugShape', () => {
   it('rejects a slug with non-alphanumeric characters', () => {
     expect(isValidSlugShape('abcdefgh-j')).toBe(false);
     expect(isValidSlugShape('../../etc/passwd')).toBe(false);
+  });
+});
+
+describe('isSuppliedSlug', () => {
+  it('treats an empty string as absent (the parser\'s own placeholder, sent by a fresh publish)', () => {
+    expect(isSuppliedSlug('')).toBe(false);
+  });
+
+  it('treats a missing key (undefined) as absent', () => {
+    expect(isSuppliedSlug(undefined)).toBe(false);
+  });
+
+  it('treats a non-string value as absent', () => {
+    expect(isSuppliedSlug(null)).toBe(false);
+    expect(isSuppliedSlug(12345)).toBe(false);
+    expect(isSuppliedSlug({})).toBe(false);
+  });
+
+  it('treats a non-empty string as supplied, regardless of whether it has a valid shape', () => {
+    expect(isSuppliedSlug('abcdefghij')).toBe(true);
+    expect(isSuppliedSlug('bad')).toBe(true);
+  });
+
+  describe('combined with isValidSlugShape — the check `publish.mts` actually performs', () => {
+    it('a valid-shape supplied slug is supplied and passes shape validation', () => {
+      const slug = 'abcdefghij';
+      expect(isSuppliedSlug(slug)).toBe(true);
+      expect(isValidSlugShape(slug)).toBe(true);
+    });
+
+    it('a bad-shape supplied slug is supplied but rejected by shape validation', () => {
+      const slug = 'not-a-slug';
+      expect(isSuppliedSlug(slug)).toBe(true);
+      expect(isValidSlugShape(slug)).toBe(false);
+    });
+
+    it('an empty-string slug is not supplied, so shape validation is never reached', () => {
+      expect(isSuppliedSlug('')).toBe(false);
+    });
   });
 });

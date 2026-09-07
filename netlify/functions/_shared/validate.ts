@@ -23,6 +23,20 @@ export function isValidSlugShape(value: unknown): value is string {
   return typeof value === 'string' && SLUG_RE.test(value);
 }
 
+/**
+ * True when a submitted `slug` field should be treated as a caller-supplied
+ * slug at all, rather than "not supplied". A fresh Supercut out of the
+ * parser always carries `slug: ''` (assigned server-side, not by the
+ * parser) — if that empty string were serialized into a publish body and
+ * treated as "supplied", it would fail shape validation on every fresh
+ * publish. Only a non-empty string counts as supplied; an empty string, a
+ * missing key, or any non-string value means "generate one" (see
+ * `publish.mts`).
+ */
+export function isSuppliedSlug(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
 const STRING_FIELDS = ['title', 'sessionId', 'project', 'startedAt', 'endedAt'] as const;
 const ARRAY_FIELDS = ['events', 'chapters', 'cast', 'files'] as const;
 

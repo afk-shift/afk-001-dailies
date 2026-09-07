@@ -9,7 +9,7 @@ import type { Config } from '@netlify/functions';
 import { deepRedact } from '../../src/lib/parse/redact';
 import { generateSlug, getSupercut, putSupercut } from '../../src/lib/store';
 import { checkAuthToken, jsonResponse } from './_shared/auth';
-import { MAX_BODY_BYTES, isPlainObject, isValidSlugShape, validateSupercutShape } from './_shared/validate';
+import { MAX_BODY_BYTES, isPlainObject, isSuppliedSlug, isValidSlugShape, validateSupercutShape } from './_shared/validate';
 
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {
@@ -48,9 +48,12 @@ export default async (req: Request): Promise<Response> => {
   // session's replay as it grows) — accepted only when it matches the
   // server's slug shape *and* a supercut with that slug already exists;
   // anything else is rejected rather than silently falling back to a fresh
-  // slug, so a typo'd `--update` doesn't quietly publish a duplicate.
+  // slug, so a typo'd `--update` doesn't quietly publish a duplicate. A
+  // present-but-empty `slug` (the parser's own placeholder, serialized
+  // verbatim by a fresh publish) is treated as "not supplied" — see
+  // `isSuppliedSlug`.
   const requestedSlug = isPlainObject(body) ? body.slug : undefined;
-  if (requestedSlug !== undefined) {
+  if (isSuppliedSlug(requestedSlug)) {
     if (!isValidSlugShape(requestedSlug)) {
       return jsonResponse({ error: 'slug must be a 10-character lowercase base32 string' }, 400);
     }
